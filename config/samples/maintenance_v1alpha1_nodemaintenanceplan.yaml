@@ -1,0 +1,9 @@
+apiVersion: maintenance.nmoo.io/v1alpha1
+kind: NodeMaintenancePlan
+metadata:
+  labels:
+    app.kubernetes.io/name: node-maintenance-orchestrator
+    app.kubernetes.io/managed-by: kustomize
+  name: nodemaintenanceplan-sample
+spec:
+  # TODO(user): Add fields here
