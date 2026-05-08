@@ -14,6 +14,8 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+
+// +kubebuilder:object:generate=true
 package v1alpha1
 
 import (
@@ -24,7 +26,7 @@ import (
 // FINALIZER
 //
 
-const NodeMaintenancePlanFinalizer = "maintenance.mnoo.io/finalizer"
+const NodeMaintenancePlanFinalizer string = "maintenance.nmoo.io/finalizer"
 
 //
 // CONDITION TYPES
@@ -70,15 +72,12 @@ type DrainOptions struct {
 	// +kubebuilder:default=false
 	IgnoreStatefulSets bool `json:"ignoreStatefulSets,omitempty"`
 
-	// Ignore pod disruption budgets
-	// +kubebuilder:default=false
-	IgnorePDBs bool `json:"ignorePDBs,omitempty"`
-
 	// Force delete pods not backed by controllers
 	// +kubebuilder:default=false
 	Force bool `json:"force,omitempty"`
 
 	// Timeout for pod eviction (seconds)
+	// +kubebuilder:validation:Minimum=0
 	// +optional
 	TimeoutSeconds int64 `json:"timeoutSeconds,omitempty"`
 }
@@ -99,6 +98,8 @@ type DrainSpec struct {
 }
 
 // NodeMaintenancePlanSpec defines desired state
+// +kubebuilder:validation:XValidation:rule="!has(self.cordon) || !has(self.drain) || !has(self.cordon.startAt) || !has(self.drain.startAt) || self.cordon.startAt <= self.drain.startAt",message="cordon.startAt must be before or equal to drain.startAt"
+// +kubebuilder:validation:XValidation:rule="!(has(self.nodes) && has(self.nodeSelector))",message="cannot set both nodes and nodeSelector"
 type NodeMaintenancePlanSpec struct {
 	// Explicit list of node names
 	// Mutually exclusive with NodeSelector
@@ -196,15 +197,14 @@ type NodeMaintenancePlanStatus struct {
 //
 
 // +kubebuilder:object:root=true
+// +kubebuilder:object:generate=true
 // +kubebuilder:subresource:status
 // +kubebuilder:resource:scope=Cluster,shortName=nmp
-
 // +kubebuilder:printcolumn:name="Nodes",type=integer,JSONPath=".status.nodes.size()"
 // +kubebuilder:printcolumn:name="Cordoned",type=string,JSONPath=".status.conditions[?(@.type=='Cordoned')].status"
 // +kubebuilder:printcolumn:name="Draining",type=string,JSONPath=".status.conditions[?(@.type=='DrainInProgress')].status"
 // +kubebuilder:printcolumn:name="Drift",type=integer,JSONPath=".status.driftedNodes"
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=".metadata.creationTimestamp"
-
 type NodeMaintenancePlan struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
@@ -214,7 +214,7 @@ type NodeMaintenancePlan struct {
 }
 
 // +kubebuilder:object:root=true
-
+// +kubebuilder:object:generate=true
 type NodeMaintenancePlanList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`

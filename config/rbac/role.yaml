@@ -1,11 +1,32 @@
+---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  labels:
-    app.kubernetes.io/name: node-maintenance-orchestrator
-    app.kubernetes.io/managed-by: kustomize
   name: manager-role
 rules:
-- apiGroups: [""]
-  resources: ["pods"]
-  verbs: ["get", "list", "watch"]
+- apiGroups:
+  - maintenance.nmoo.io
+  resources:
+  - nodemaintenanceplans
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - maintenance.nmoo.io
+  resources:
+  - nodemaintenanceplans/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - maintenance.nmoo.io
+  resources:
+  - nodemaintenanceplans/status
+  verbs:
+  - get
+  - patch
+  - update
