@@ -31,20 +31,23 @@ package controller
 
 import (
 	"context"
-	
+	"time"
+
+	"github.com/go-logr/logr"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
-	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
-	
+	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
-	maintenancev1alpha1 "github.com/Nils-Svensson/node-maintenance-orchestrator/api/v1alpha1"
+	"github.com/Nils-Svensson/node-maintenance-orchestrator/api/v1alpha1"
+	"github.com/Nils-Svensson/node-maintenance-orchestrator/internal/maintenance"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
 )
 
 // NodeMaintenancePlanReconciler reconciles a NodeMaintenancePlan object
@@ -54,6 +57,8 @@ type NodeMaintenancePlanReconciler struct {
 	Recorder record.EventRecorder
 	ManagerConfig *rest.Config
 }
+
+const finalizerName = "nodemaintenanceplan.finalizers.nmoo.io"
 
 // +kubebuilder:rbac:groups=maintenance.nmoo.io,resources=nodemaintenanceplans,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=maintenance.nmoo.io,resources=nodemaintenanceplans/status,verbs=get;update;patch
@@ -72,9 +77,19 @@ func (r *NodeMaintenancePlanReconciler) Reconcile(ctx context.Context, req ctrl.
 
 	log := logf.FromContext(ctx).WithValues("plan", req.NamespacedName)
 
+	start := time.Now()
+
+	defer func() {
+	log.Info(
+		"Finished reconciliation",
+		"duration", time.Since(start))
+	}()
+
 	log.Info("Reconciling")
 
-	plan := &maintenancev1alpha1.NodeMaintenancePlan{}
+	plan := &v1alpha1.NodeMaintenancePlan{}
+
+	service := maintenance.NewMaintenanceService(r.Client, log, r.Recorder)
 
 	err := r.Client.Get(ctx, req.NamespacedName, plan)
 	if err != nil {
@@ -87,28 +102,47 @@ func (r *NodeMaintenancePlanReconciler) Reconcile(ctx context.Context, req ctrl.
 		return ctrl.Result{}, err
 	}
 
+	// Handle deletion with finalizer
 	if !plan.ObjectMeta.DeletionTimestamp.IsZero() {
+
 		log.Info("Handling deletion")
-
-		if controllerutil.ContainsFinalizer(plan, "nodemaintenanceplan.finalizers.nmoo.io") {
-			// TODO: cleanup logic here, e.g. uncordon nodes if plan is deleted while in progress, 
-			// remove any associated resources etc.
-
-			controllerutil.RemoveFinalizer(plan, "nodemaintenanceplan.finalizers.nmoo.io")
-			if err := r.Client.Update(ctx, plan); err != nil {
-				log.Error(err, "Failed to remove finalizer")
-				return ctrl.Result{}, err
-			}
+	
+		if err := r.handleDeletion(ctx, log, plan); err != nil {
+			log.Error(err, "Failed to handle deletion")
+			return ctrl.Result{}, err
 		}
-
+	
 		return ctrl.Result{}, nil
 	}
 
-	if plan.Spec.Cordon.Enabled {
+	// Add finalizer if not present
+	updated, err := r.ensureFinalizer(ctx, plan)
+	if err != nil {
+		log.Error(err, "Failed to ensure finalizer")
+		return ctrl.Result{}, err
 		
 	}
 
-	
+	if updated {
+		return ctrl.Result{}, nil
+	}
+
+	res, err := service.ComputeOwnershipResolution(ctx, plan)
+	if err != nil {
+		log.Error(err, "Failed to compute ownership resolution")
+		return ctrl.Result{}, err
+	}
+
+	if err := service.ReconcileOwnership(ctx, plan, res); err != nil {
+		log.Error(err, "Failed to reconcile ownership")
+		return ctrl.Result{}, err
+	}
+
+	if err := service.ReconcileCordon(ctx, plan, res); err != nil {
+		log.Error(err, "Failed to reconcile cordon state")
+		return ctrl.Result{}, err
+	}
+
 
 
 
@@ -121,8 +155,37 @@ func (r *NodeMaintenancePlanReconciler) Reconcile(ctx context.Context, req ctrl.
 // on relevant node events (e.g. become unschedulable, new nodes added to cluster, manual triggers outside of plan etc.)
 func (r *NodeMaintenancePlanReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&maintenancev1alpha1.NodeMaintenancePlan{}).
+		For(&v1alpha1.NodeMaintenancePlan{}, builder.WithPredicates(predicate.GenerationChangedPredicate{})).
 		WithOptions(controller.Options{MaxConcurrentReconciles: 1}).
 		Named("nodemaintenanceplan").
 		Complete(r)
+}
+
+
+
+func (r *NodeMaintenancePlanReconciler) ensureFinalizer(ctx context.Context,plan *v1alpha1.NodeMaintenancePlan) (bool, error) {
+
+	if controllerutil.ContainsFinalizer(plan, finalizerName) {
+		return false, nil
+	}
+
+	controllerutil.AddFinalizer(plan, finalizerName)
+
+	if err := r.Client.Update(ctx, plan); err != nil {
+		return false, err
+	}
+
+	return true, nil
+}
+
+func (r *NodeMaintenancePlanReconciler) handleDeletion(ctx context.Context, log logr.Logger, plan *v1alpha1.NodeMaintenancePlan) error {
+    if !controllerutil.ContainsFinalizer(plan, finalizerName) {
+        return nil
+    }
+    svc := maintenance.NewMaintenanceService(r.Client, log, r.Recorder)
+    if err := svc.CleanUp(ctx, plan); err != nil {
+        return err
+    }
+    controllerutil.RemoveFinalizer(plan, finalizerName)
+    return r.Client.Update(ctx, plan)
 }

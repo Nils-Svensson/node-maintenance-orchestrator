@@ -11,15 +11,16 @@ package maintenance
 import (
 	"context"
 
-	"k8s.io/api/core/v1"
+	corev1 "k8s.io/api/core/v1" 
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	
 )
 
 
 
-// CordonNode marks the given node as unschedulable, effectively cordoning it. It also adds annotations to indicate that the node is managed by the maintenance orchestrator and optionally includes a reason for cordoning.
+// CordonNode marks the given node as unschedulable, effectively cordoning it.
 // The operation is idempotent, so if the node is already cordoned, it will simply log that information and return without making changes.
-func (s *MaintenanceService) CordonNode(ctx context.Context, node *v1.Node, reason string) error {
+func (s *MaintenanceService) CordonNode(ctx context.Context, node *corev1.Node) error {
 
 	log := s.log.WithValues("node", node.Name)
 
@@ -28,42 +29,34 @@ func (s *MaintenanceService) CordonNode(ctx context.Context, node *v1.Node, reas
 		return nil
 	}
 
+	original := node.DeepCopy()
+
 	node.Spec.Unschedulable = true
-
-	if node.Annotations == nil {
-		node.Annotations = map[string]string{}
-	}
-
-	node.Annotations["maintenance.nmoo.io/managed"] = "true"
-
-	if reason != "" {
-		node.Annotations["maintenance.nmoo.io/reason"] = reason
-	}
 
 	log.Info("cordoning node")
 
-	return s.client.Update(ctx, node)
+	return s.client.Patch(
+		ctx,
+		node,
+		client.MergeFrom(original),
+	)
 }
-// UncordonNode marks the given node as schedulable, effectively uncordoning it. It also removes any annotations related to maintenance management and reason. 
+// UncordonNode marks the given node as schedulable, effectively uncordoning it.
 // The operation is idempotent, so if the node is already uncordoned, it will simply log that information and return without making changes.
-func (s *MaintenanceService) UncordonNode(ctx context.Context, node *v1.Node, reason string) error {
+func (s *MaintenanceService) UncordonNode(ctx context.Context, node *corev1.Node) error {
 
 	log := s.log.WithValues("node", node.Name)
+
+	original := node.DeepCopy()
 
 	if !node.Spec.Unschedulable {
 		log.V(1).Info("node already uncordoned")
 		return nil
 	}
-
+ 
 	node.Spec.Unschedulable = false
-
-	if node.Annotations != nil {
-		delete(node.Annotations, "maintenance.nmoo.io/managed")
-		delete(node.Annotations, "maintenance.nmoo.io/reason")
-	}
 
 	log.Info("uncordoning node")
 
-	return s.client.Update(ctx, node)
-	
+	return s.client.Patch(ctx, node, client.MergeFrom(original))
 }

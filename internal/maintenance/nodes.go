@@ -15,7 +15,7 @@ import (
 	"fmt"
 
 	"github.com/Nils-Svensson/node-maintenance-orchestrator/api/v1alpha1"
-	"k8s.io/api/core/v1"
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -24,7 +24,7 @@ import (
 
 // NodeResolutionResult encapsulates the outcome of resolving nodes for a NodeMaintenancePlan. It includes the list of resolved nodes and any issues encountered during resolution, such as missing nodes or invalid selectors.
 type NodeResolutionResult struct {
-	Nodes []v1.Node
+	Nodes []corev1.Node
 	Issues []v1alpha1.NodeIssue
 }
 
@@ -50,7 +50,7 @@ func (s *MaintenanceService) resolveExplicitNodes(ctx context.Context, plan *v1a
 
 	for _, nodeName := range plan.Spec.Nodes {
 
-		var node v1.Node
+		var node corev1.Node
 
 		err := s.client.Get(ctx, types.NamespacedName{Name: nodeName}, &node)
 
@@ -63,13 +63,10 @@ func (s *MaintenanceService) resolveExplicitNodes(ctx context.Context, plan *v1a
 						Message: fmt.Sprintf("node %q does not exist", nodeName),
 					},
 				)
-
 				continue
 			}
-
 			return nil, err
 		}
-
 		result.Nodes = append(result.Nodes, node)
 	}
 
@@ -86,7 +83,7 @@ func (s *MaintenanceService) resolveSelectorNodes(ctx context.Context, plan *v1a
 		return nil, fmt.Errorf("invalid node selector: %w", err)
 	}
 
-	var nodeList v1.NodeList
+	var nodeList corev1.NodeList
 
 	err = s.client.List(
 		ctx,
