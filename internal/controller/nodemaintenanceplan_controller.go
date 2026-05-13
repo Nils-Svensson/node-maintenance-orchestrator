@@ -14,19 +14,6 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-/*
-Remember workflow:
-
-Reconcile:
-  1. Fetch plan
-  2. Handle deletion
-  3. Resolve nodes
-  4. Compute preview
-  5. Update status
-  6. Execute (cordon/drain)
-  7. Requeue if needed
-*/
-
 package controller
 
 import (
@@ -42,19 +29,23 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
+	corev1 "k8s.io/api/core/v1"
 
 	"github.com/Nils-Svensson/node-maintenance-orchestrator/api/v1alpha1"
 	"github.com/Nils-Svensson/node-maintenance-orchestrator/internal/maintenance"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
 // NodeMaintenancePlanReconciler reconciles a NodeMaintenancePlan object
 type NodeMaintenancePlanReconciler struct {
-	Client client.Client
-	Scheme *runtime.Scheme
-	Recorder record.EventRecorder
+	Client        client.Client
+	Scheme        *runtime.Scheme
+	Recorder      record.EventRecorder
 	ManagerConfig *rest.Config
 }
 
@@ -80,9 +71,9 @@ func (r *NodeMaintenancePlanReconciler) Reconcile(ctx context.Context, req ctrl.
 	start := time.Now()
 
 	defer func() {
-	log.Info(
-		"Finished reconciliation",
-		"duration", time.Since(start))
+		log.Info(
+			"Finished reconciliation",
+			"duration", time.Since(start))
 	}()
 
 	log.Info("Reconciling")
@@ -103,28 +94,23 @@ func (r *NodeMaintenancePlanReconciler) Reconcile(ctx context.Context, req ctrl.
 	}
 
 	// Handle deletion with finalizer
-	if !plan.ObjectMeta.DeletionTimestamp.IsZero() {
+	if !plan.DeletionTimestamp.IsZero() {
 
 		log.Info("Handling deletion")
-	
+
 		if err := r.handleDeletion(ctx, log, plan); err != nil {
 			log.Error(err, "Failed to handle deletion")
 			return ctrl.Result{}, err
 		}
-	
+
 		return ctrl.Result{}, nil
 	}
 
-	// Add finalizer if not present
-	updated, err := r.ensureFinalizer(ctx, plan)
-	if err != nil {
+	// Add finalizer if not present. Do not return early — Update refreshes plan
+	// in-place so it is safe to continue reconciling in the same pass.
+	if err := r.ensureFinalizer(ctx, plan); err != nil {
 		log.Error(err, "Failed to ensure finalizer")
 		return ctrl.Result{}, err
-		
-	}
-
-	if updated {
-		return ctrl.Result{}, nil
 	}
 
 	res, err := service.ComputeOwnershipResolution(ctx, plan)
@@ -138,54 +124,85 @@ func (r *NodeMaintenancePlanReconciler) Reconcile(ctx context.Context, req ctrl.
 		return ctrl.Result{}, err
 	}
 
+	// UpdateStatus runs before ReconcileDrift so that drift is written to status
+	// while the managed-by annotation is still present on stable nodes. ReconcileDrift
+	// removes the annotation, so any status update after that point cannot detect drift.
+	if err := service.UpdateStatus(ctx, plan, res); err != nil {
+		log.Error(err, "Failed to update status")
+		return ctrl.Result{}, err
+	}
+
+	if err := service.ReconcileDrift(ctx, plan, res); err != nil {
+		log.Error(err, "Failed to reconcile drift")
+		return ctrl.Result{}, err
+	}
+
 	if err := service.ReconcileCordon(ctx, plan, res); err != nil {
 		log.Error(err, "Failed to reconcile cordon state")
 		return ctrl.Result{}, err
 	}
 
+	return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 
-
-
-	return ctrl.Result{}, nil
 }
 
 // SetupWithManager sets up the controller with the Manager.
 // TODO: add predicates here to filter events and reduce unnecessary reconciles, GenerationChangedPredicate to
-// only trigger on spec changes, and watcher for nodes to trigger reconciles 
+// only trigger on spec changes, and watcher for nodes to trigger reconciles
 // on relevant node events (e.g. become unschedulable, new nodes added to cluster, manual triggers outside of plan etc.)
 func (r *NodeMaintenancePlanReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&v1alpha1.NodeMaintenancePlan{}, builder.WithPredicates(predicate.GenerationChangedPredicate{})).
 		WithOptions(controller.Options{MaxConcurrentReconciles: 1}).
+		Watches(&corev1.Node{}, handler.EnqueueRequestsFromMapFunc(r.nodeToPlans), builder.WithPredicates(nodeMaintenancePredicates(logf.Log.WithName("node-predicate")))).
 		Named("nodemaintenanceplan").
 		Complete(r)
 }
 
-
-
-func (r *NodeMaintenancePlanReconciler) ensureFinalizer(ctx context.Context,plan *v1alpha1.NodeMaintenancePlan) (bool, error) {
+func (r *NodeMaintenancePlanReconciler) ensureFinalizer(ctx context.Context, plan *v1alpha1.NodeMaintenancePlan) error {
 
 	if controllerutil.ContainsFinalizer(plan, finalizerName) {
-		return false, nil
+		return nil
 	}
 
 	controllerutil.AddFinalizer(plan, finalizerName)
 
-	if err := r.Client.Update(ctx, plan); err != nil {
-		return false, err
-	}
-
-	return true, nil
+	return r.Client.Update(ctx, plan)
 }
 
 func (r *NodeMaintenancePlanReconciler) handleDeletion(ctx context.Context, log logr.Logger, plan *v1alpha1.NodeMaintenancePlan) error {
-    if !controllerutil.ContainsFinalizer(plan, finalizerName) {
-        return nil
-    }
-    svc := maintenance.NewMaintenanceService(r.Client, log, r.Recorder)
-    if err := svc.CleanUp(ctx, plan); err != nil {
-        return err
-    }
-    controllerutil.RemoveFinalizer(plan, finalizerName)
-    return r.Client.Update(ctx, plan)
+	if !controllerutil.ContainsFinalizer(plan, finalizerName) {
+		return nil
+	}
+	svc := maintenance.NewMaintenanceService(r.Client, log, r.Recorder)
+	if err := svc.CleanUp(ctx, plan); err != nil {
+		return err
+	}
+	controllerutil.RemoveFinalizer(plan, finalizerName)
+	return r.Client.Update(ctx, plan)
+}
+
+func (r *NodeMaintenancePlanReconciler) nodeToPlans(ctx context.Context, obj client.Object) []reconcile.Request {
+	node, ok := obj.(*corev1.Node)
+	if !ok {
+		return nil
+	}
+
+	log := logf.FromContext(ctx)
+
+	var planList v1alpha1.NodeMaintenancePlanList
+	if err := r.Client.List(ctx, &planList); err != nil {
+		log.Error(err, "nodeToPlans: failed to list NodeMaintenancePlans")
+		return nil
+	}
+
+	var requests []reconcile.Request
+	for _, plan := range planList.Items {
+		if nodeRelevantToPlan(node, &plan) {
+			requests = append(requests, reconcile.Request{
+				NamespacedName: types.NamespacedName{Name: plan.Name},
+			})
+		}
+	}
+	return requests
 }

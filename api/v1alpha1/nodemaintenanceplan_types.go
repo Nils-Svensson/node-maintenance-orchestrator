@@ -14,7 +14,6 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-
 // +kubebuilder:object:generate=true
 package v1alpha1
 
@@ -155,6 +154,10 @@ type NodeStatus struct {
 
 	DrainProgress int32 `json:"drainProgress,omitempty"`
 
+	Drifted bool `json:"drifted,omitempty"`
+
+	DriftReason string `json:"driftReason,omitempty"`
+
 	TotalPods         int32 `json:"totalPods,omitempty"`
 	EvictablePods     int32 `json:"evictablePods,omitempty"`
 	BlockedPods       int32 `json:"blockedPods,omitempty"`
@@ -175,9 +178,9 @@ type NodeMaintenancePlanStatus struct {
 	// +optional
 	Nodes []NodeStatus `json:"nodes,omitempty"`
 
-	// Number of nodes with detected drift
+	// List of nodes with detected drift
 	// +optional
-	DriftedNodes int32 `json:"driftedNodes,omitempty"`
+	DriftedNodes []string `json:"driftedNodes,omitempty"`
 
 	// Last time preview was computed
 	// +optional

@@ -1,0 +1,14 @@
+apiVersion: maintenance.nmoo.io/v1alpha1
+kind: NodeMaintenancePlan
+metadata:
+  name: cordon-workers
+spec:
+  reason: "Planned maintenance"
+
+  nodes:
+    - nmo-worker2
+    - nmo-worker3
+    - nmo-worker4
+
+  cordon:
+    enabled: true

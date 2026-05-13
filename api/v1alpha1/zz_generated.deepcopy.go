@@ -214,6 +214,11 @@ func (in *NodeMaintenancePlanStatus) DeepCopyInto(out *NodeMaintenancePlanStatus
 			(*in)[i].DeepCopyInto(&(*out)[i])
 		}
 	}
+	if in.DriftedNodes != nil {
+		in, out := &in.DriftedNodes, &out.DriftedNodes
+		*out = make([]string, len(*in))
+		copy(*out, *in)
+	}
 	if in.LastPreviewTime != nil {
 		in, out := &in.LastPreviewTime, &out.LastPreviewTime
 		*out = (*in).DeepCopy()

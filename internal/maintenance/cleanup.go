@@ -14,8 +14,8 @@ func (s *MaintenanceService) CleanUp(ctx context.Context, plan *v1alpha1.NodeMai
 	return nil
 }
 
-// ReleaseNode removes maintenance-related annotations from the node, effectively releasing it from maintenance management. 
-// This is typically called after uncordoning a node to clean up any metadata that indicates it was under maintenance. 
+// ReleaseNode removes maintenance-related annotations from the node, effectively releasing it from maintenance management.
+// This is typically called after uncordoning a node to clean up any metadata that indicates it was under maintenance.
 func (s *MaintenanceService) ReleaseNode(ctx context.Context, node *corev1.Node, plan *v1alpha1.NodeMaintenancePlan) error {
 
 	log := s.log.WithValues("node", node.Name)
@@ -25,9 +25,7 @@ func (s *MaintenanceService) ReleaseNode(ctx context.Context, node *corev1.Node,
 	}
 
 	if node.Annotations[ManagedByAnnotation] != plan.Name {
-		log.V(1).Info(
-			"node not managed by this plan, skipping release",
-		)
+		log.V(1).Info("node not managed by this plan, skipping release")
 		return nil
 	}
 
@@ -38,9 +36,5 @@ func (s *MaintenanceService) ReleaseNode(ctx context.Context, node *corev1.Node,
 
 	log.Info("releasing node ownership")
 
-	return s.client.Patch(
-		ctx,
-		node,
-		client.MergeFrom(original),
-	)
+	return s.client.Patch(ctx, node, client.MergeFrom(original))
 }

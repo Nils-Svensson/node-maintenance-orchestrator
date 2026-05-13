@@ -17,14 +17,14 @@ import (
 	"github.com/Nils-Svensson/node-maintenance-orchestrator/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 // NodeResolutionResult encapsulates the outcome of resolving nodes for a NodeMaintenancePlan. It includes the list of resolved nodes and any issues encountered during resolution, such as missing nodes or invalid selectors.
 type NodeResolutionResult struct {
-	Nodes []corev1.Node
+	Nodes  []corev1.Node
 	Issues []v1alpha1.NodeIssue
 }
 
@@ -55,6 +55,12 @@ func (s *MaintenanceService) resolveExplicitNodes(ctx context.Context, plan *v1a
 		err := s.client.Get(ctx, types.NamespacedName{Name: nodeName}, &node)
 
 		if err != nil {
+
+			s.log.V(1).Info(
+				"desired node not found",
+				"node", nodeName,
+				"plan", plan.Name,
+			)
 
 			if apierrors.IsNotFound(err) {
 				result.Issues = append(result.Issues,

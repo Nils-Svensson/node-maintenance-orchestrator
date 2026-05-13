@@ -11,8 +11,10 @@ spec:
     kind: NodeMaintenancePlan
     listKind: NodeMaintenancePlanList
     plural: nodemaintenanceplans
+    shortNames:
+    - nmp
     singular: nodemaintenanceplan
-  scope: Namespaced
+  scope: Cluster
   versions:
   - additionalPrinterColumns:
     - jsonPath: .status.nodes.size()
@@ -96,6 +98,7 @@ spec:
                       timeoutSeconds:
                         description: Timeout for pod eviction (seconds)
                         format: int64
+                        minimum: 0
                         type: integer
                     type: object
                   startAt:
@@ -162,6 +165,12 @@ spec:
                 description: Reason for maintenance (added as annotation to nodes)
                 type: string
             type: object
+            x-kubernetes-validations:
+            - message: cordon.startAt must be before or equal to drain.startAt
+              rule: '!has(self.cordon) || !has(self.drain) || !has(self.cordon.startAt)
+                || !has(self.drain.startAt) || self.cordon.startAt <= self.drain.startAt'
+            - message: cannot set both nodes and nodeSelector
+              rule: '!(has(self.nodes) && has(self.nodeSelector))'
           status:
             description: NodeMaintenancePlanStatus defines observed state
             properties:
@@ -223,9 +232,10 @@ spec:
                   type: object
                 type: array
               driftedNodes:
-                description: Number of nodes with detected drift
-                format: int32
-                type: integer
+                description: List of nodes with detected drift
+                items:
+                  type: string
+                type: array
               lastError:
                 description: Last error message if preview or execution failed
                 type: string
@@ -246,6 +256,10 @@ spec:
                     drainProgress:
                       format: int32
                       type: integer
+                    driftReason:
+                      type: string
+                    drifted:
+                      type: boolean
                     evictablePods:
                       format: int32
                       type: integer
@@ -294,4 +308,5 @@ spec:
         type: object
     served: true
     storage: true
-    subresources: {}
+    subresources:
+      status: {}
