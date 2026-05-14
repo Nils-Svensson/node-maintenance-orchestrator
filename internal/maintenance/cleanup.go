@@ -2,6 +2,7 @@ package maintenance
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/Nils-Svensson/node-maintenance-orchestrator/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
@@ -9,8 +10,31 @@ import (
 )
 
 func (s *MaintenanceService) CleanUp(ctx context.Context, plan *v1alpha1.NodeMaintenancePlan) error {
-	// Placeholder for cleanup logic, such as removing old maintenance records, resetting states, etc.
-	s.log.Info("Performing cleanup tasks for node maintenance operations")
+	s.log.Info("cleaning up plan")
+
+	// TODO: cancel any in-flight drain operations when drain is implemented.
+
+	owned, err := s.ResolveOwnedNodes(ctx, plan.Name)
+	if err != nil {
+		return fmt.Errorf("resolving owned nodes: %w", err)
+	}
+
+	for _, node := range owned {
+		if err := s.UncordonNode(ctx, node); err != nil {
+			return fmt.Errorf("uncordoning node %q during cleanup: %w", node.Name, err)
+		}
+		if err := s.ReleaseNode(ctx, node, plan); err != nil {
+			return fmt.Errorf("releasing node %q during cleanup: %w", node.Name, err)
+		}
+		s.recorder.Eventf(
+			plan,
+			"Normal",
+			"NodeReleased",
+			"node %q uncordoned and released as part of plan deletion",
+			node.Name,
+		)
+	}
+
 	return nil
 }
 
@@ -33,6 +57,7 @@ func (s *MaintenanceService) ReleaseNode(ctx context.Context, node *corev1.Node,
 
 	delete(node.Annotations, ManagedByAnnotation)
 	delete(node.Annotations, ReasonAnnotation)
+	delete(node.Annotations, CordonedAnnotation)
 
 	log.Info("releasing node ownership")
 

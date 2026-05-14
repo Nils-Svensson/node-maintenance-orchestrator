@@ -12,6 +12,9 @@ import (
 // mutated further — the user's manual change is preserved. The node stays in the plan spec and
 // will be marked as drifted in status; the operator will not re-adopt it until the user removes
 // it from the spec.
+// TODO: I need to figure out how to handle the case where nodeselector is used, 
+// since removing from plan spec won't be a viable option for the user to re-adopt. 
+// Maybe in that case we should re-adopt immediately and just log the drift without releasing ownership, since the user has no way to "fix" the drift?
 func (s *MaintenanceService) ReconcileDrift(ctx context.Context, plan *v1alpha1.NodeMaintenancePlan, res *OwnershipResolution) error {
 
 	for _, node := range res.Stable {

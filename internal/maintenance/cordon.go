@@ -21,7 +21,9 @@ func (s *MaintenanceService) CordonNode(ctx context.Context, node *corev1.Node) 
 
 	log := s.log.WithValues("node", node.Name)
 
-	if node.Spec.Unschedulable {
+	alreadyCordoned := node.Spec.Unschedulable &&
+		node.Annotations != nil && node.Annotations[CordonedAnnotation] == "true"
+	if alreadyCordoned {
 		log.V(1).Info("node already cordoned")
 		return nil
 	}
@@ -29,6 +31,10 @@ func (s *MaintenanceService) CordonNode(ctx context.Context, node *corev1.Node) 
 	original := node.DeepCopy()
 
 	node.Spec.Unschedulable = true
+	if node.Annotations == nil {
+		node.Annotations = map[string]string{}
+	}
+	node.Annotations[CordonedAnnotation] = "true"
 
 	log.Info("cordoning node")
 
@@ -45,14 +51,18 @@ func (s *MaintenanceService) UncordonNode(ctx context.Context, node *corev1.Node
 
 	log := s.log.WithValues("node", node.Name)
 
-	original := node.DeepCopy()
-
-	if !node.Spec.Unschedulable {
+	annotationPresent := node.Annotations != nil && node.Annotations[CordonedAnnotation] != ""
+	if !node.Spec.Unschedulable && !annotationPresent {
 		log.V(1).Info("node already uncordoned")
 		return nil
 	}
 
+	original := node.DeepCopy()
+
 	node.Spec.Unschedulable = false
+	if node.Annotations != nil {
+		delete(node.Annotations, CordonedAnnotation)
+	}
 
 	log.Info("uncordoning node")
 

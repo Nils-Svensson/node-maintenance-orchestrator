@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/record"
@@ -31,7 +32,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
-	corev1 "k8s.io/api/core/v1"
 
 	"github.com/Nils-Svensson/node-maintenance-orchestrator/api/v1alpha1"
 	"github.com/Nils-Svensson/node-maintenance-orchestrator/internal/maintenance"
@@ -49,7 +49,7 @@ type NodeMaintenancePlanReconciler struct {
 	ManagerConfig *rest.Config
 }
 
-const finalizerName = "nodemaintenanceplan.finalizers.nmoo.io"
+const finalizerName = v1alpha1.NodeMaintenancePlanFinalizer
 
 // +kubebuilder:rbac:groups=maintenance.nmoo.io,resources=nodemaintenanceplans,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=maintenance.nmoo.io,resources=nodemaintenanceplans/status,verbs=get;update;patch
@@ -142,17 +142,24 @@ func (r *NodeMaintenancePlanReconciler) Reconcile(ctx context.Context, req ctrl.
 		return ctrl.Result{}, err
 	}
 
-	return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
+	return ctrl.Result{}, nil
 
 }
 
 // SetupWithManager sets up the controller with the Manager.
-// TODO: add predicates here to filter events and reduce unnecessary reconciles, GenerationChangedPredicate to
-// only trigger on spec changes, and watcher for nodes to trigger reconciles
-// on relevant node events (e.g. become unschedulable, new nodes added to cluster, manual triggers outside of plan etc.)
 func (r *NodeMaintenancePlanReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	// Pass through spec changes (generation bump) and deletion (DeletionTimestamp set).
+	// GenerationChangedPredicate alone would filter the DeletionTimestamp update since
+	// metadata changes don't increment generation, causing plans to get stuck in Terminating.
+	planPredicate := predicate.Or(
+		predicate.GenerationChangedPredicate{},
+		predicate.NewPredicateFuncs(func(obj client.Object) bool {
+			return !obj.GetDeletionTimestamp().IsZero()
+		}),
+	)
+
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&v1alpha1.NodeMaintenancePlan{}, builder.WithPredicates(predicate.GenerationChangedPredicate{})).
+		For(&v1alpha1.NodeMaintenancePlan{}, builder.WithPredicates(planPredicate)).
 		WithOptions(controller.Options{MaxConcurrentReconciles: 1}).
 		Watches(&corev1.Node{}, handler.EnqueueRequestsFromMapFunc(r.nodeToPlans), builder.WithPredicates(nodeMaintenancePredicates(logf.Log.WithName("node-predicate")))).
 		Named("nodemaintenanceplan").

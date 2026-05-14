@@ -5,10 +5,8 @@ metadata:
 spec:
   reason: "Planned maintenance"
 
-  nodes:
-    - nmo-worker2
-    - nmo-worker3
-    - nmo-worker4
-
+  nodeSelector:
+    matchLabels:
+      tier: gpu
   cordon:
     enabled: true

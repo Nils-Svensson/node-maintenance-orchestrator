@@ -12,6 +12,10 @@ import (
 const (
 	ManagedByAnnotation = "maintenance.nmoo.io/managed-by"
 	ReasonAnnotation    = "maintenance.nmoo.io/reason"
+	// CordonedAnnotation is set on a node when the operator has cordoned it.
+	// Drift detection requires this marker so it can distinguish "never cordoned
+	// by the operator" from "operator cordoned it and someone manually undid that."
+	CordonedAnnotation = "maintenance.nmoo.io/cordoned"
 )
 
 // OwnershipResolution is the result of diffing desired vs currently managed nodes.
@@ -121,7 +125,11 @@ func ComputeOwnership(desired map[string]*corev1.Node, managed map[string]*corev
 	return res
 }
 
-func (s *MaintenanceService) AdoptNode(ctx context.Context, node *corev1.Node, plan *v1alpha1.NodeMaintenancePlan) error {
+// AdoptNode claims ownership of a node by setting the managed-by annotation.
+// If cordon is true, Unschedulable is set in the same patch so the node never
+// passes through the intermediate state of being annotated but still schedulable,
+// which would otherwise look like ManualUncordon drift to a concurrent reconcile.
+func (s *MaintenanceService) AdoptNode(ctx context.Context, node *corev1.Node, plan *v1alpha1.NodeMaintenancePlan, cordon bool) error {
 
 	log := s.log.WithValues("node", node.Name)
 
@@ -133,6 +141,13 @@ func (s *MaintenanceService) AdoptNode(ctx context.Context, node *corev1.Node, p
 
 	node.Annotations[ManagedByAnnotation] = plan.Name
 	node.Annotations[ReasonAnnotation] = plan.Spec.Reason
+
+	if cordon {
+		if !node.Spec.Unschedulable {
+			node.Spec.Unschedulable = true
+		}
+		node.Annotations[CordonedAnnotation] = "true"
+	}
 
 	log.Info("adopting node ownership")
 

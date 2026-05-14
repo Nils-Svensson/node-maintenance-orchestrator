@@ -21,8 +21,9 @@ func DetectNodeDrift(node *corev1.Node, plan *v1alpha1.NodeMaintenancePlan) (boo
 	}
 
 	cordonEnabled := plan.Spec.Cordon != nil && plan.Spec.Cordon.Enabled
+	operatorCordoned := node.Annotations[CordonedAnnotation] == "true"
 
-	if cordonEnabled && !node.Spec.Unschedulable {
+	if cordonEnabled && operatorCordoned && !node.Spec.Unschedulable {
 		return true, DriftReasonManualUncordon
 	}
 
