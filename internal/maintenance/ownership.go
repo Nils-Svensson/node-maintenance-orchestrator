@@ -131,6 +131,10 @@ func ComputeOwnership(desired map[string]*corev1.Node, managed map[string]*corev
 // which would otherwise look like ManualUncordon drift to a concurrent reconcile.
 func (s *MaintenanceService) AdoptNode(ctx context.Context, node *corev1.Node, plan *v1alpha1.NodeMaintenancePlan, cordon bool) error {
 
+	// TODO: Add label maintenance.nmoo.io/in-maintenance = "true, either here or once cordon is active,
+	// which can be used by other operators (e.g. autoscaler) to avoid scheduling new pods on the node.
+	// This should maybe be set regardless of cordon behavior, since even if cordon is disabled,
+	// the plan still considers the node in maintenance and would want to avoid new scheduling.
 	log := s.log.WithValues("node", node.Name)
 
 	original := node.DeepCopy()
@@ -147,9 +151,19 @@ func (s *MaintenanceService) AdoptNode(ctx context.Context, node *corev1.Node, p
 			node.Spec.Unschedulable = true
 		}
 		node.Annotations[CordonedAnnotation] = "true"
+		log.Info("adopting node ownership and cordoning")
+	} else {
+		log.Info("adopting node ownership")
 	}
 
-	log.Info("adopting node ownership")
+	if err := s.client.Patch(ctx, node, client.MergeFrom(original)); err != nil {
+		return err
+	}
 
-	return s.client.Patch(ctx, node, client.MergeFrom(original))
+	if cordon {
+		s.recorder.Eventf(plan, corev1.EventTypeNormal, "NodeCordoned", "node %q adopted and cordoned", node.Name)
+	} else {
+		s.recorder.Eventf(plan, corev1.EventTypeNormal, "NodeAdopted", "node %q adopted", node.Name)
+	}
+	return nil
 }

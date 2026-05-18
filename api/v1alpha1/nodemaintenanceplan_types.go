@@ -67,9 +67,9 @@ type DrainOptions struct {
 	// +kubebuilder:default=true
 	IgnoreDaemonSets bool `json:"ignoreDaemonSets,omitempty"`
 
-	// Ignore pods managed by StatefulSets
-	// +kubebuilder:default=false
-	IgnoreStatefulSets bool `json:"ignoreStatefulSets,omitempty"`
+	// Whether to delete pods with emptyDir volumes.
+	// Defaults to false
+	DeleteEmptyDirData bool `json:"deleteEmptyDirData,omitempty"`
 
 	// Force delete pods not backed by controllers
 	// +kubebuilder:default=false
@@ -79,6 +79,12 @@ type DrainOptions struct {
 	// +kubebuilder:validation:Minimum=0
 	// +optional
 	TimeoutSeconds int64 `json:"timeoutSeconds,omitempty"`
+
+	// Whether to honour PodDisruptionBudgets during eviction. When false, pods
+	// blocked by a PDB are force-deleted via the Delete API instead of the
+	// Eviction API, bypassing budget checks entirely.
+	// +kubebuilder:default=true
+	RespectPodDisruptionBudgets bool `json:"respectPodDisruptionBudgets,omitempty"`
 }
 
 // DrainSpec defines drain behavior
@@ -151,6 +157,9 @@ type NodeStatus struct {
 	Name string `json:"name"`
 
 	Cordoned bool `json:"cordoned,omitempty"`
+
+	// +optional
+	CordonedAt *metav1.Time `json:"cordonedAt,omitempty"`
 
 	DrainProgress int32 `json:"drainProgress,omitempty"`
 

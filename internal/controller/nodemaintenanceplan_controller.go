@@ -18,6 +18,7 @@ package controller
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -25,6 +26,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/record"
+	"k8s.io/utils/clock"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -80,7 +82,7 @@ func (r *NodeMaintenancePlanReconciler) Reconcile(ctx context.Context, req ctrl.
 
 	plan := &v1alpha1.NodeMaintenancePlan{}
 
-	service := maintenance.NewMaintenanceService(r.Client, log, r.Recorder)
+	service := maintenance.NewMaintenanceService(r.Client, log, r.Recorder, clock.RealClock{})
 
 	err := r.Client.Get(ctx, req.NamespacedName, plan)
 	if err != nil {
@@ -119,7 +121,9 @@ func (r *NodeMaintenancePlanReconciler) Reconcile(ctx context.Context, req ctrl.
 		return ctrl.Result{}, err
 	}
 
-	if err := service.ReconcileOwnership(ctx, plan, res); err != nil {
+	schedule := service.ComputeSchedule(plan)
+
+	if err := service.ReconcileOwnership(ctx, plan, res, schedule.ShouldAct); err != nil {
 		log.Error(err, "Failed to reconcile ownership")
 		return ctrl.Result{}, err
 	}
@@ -137,17 +141,44 @@ func (r *NodeMaintenancePlanReconciler) Reconcile(ctx context.Context, req ctrl.
 		return ctrl.Result{}, err
 	}
 
-	if err := service.ReconcileCordon(ctx, plan, res); err != nil {
-		log.Error(err, "Failed to reconcile cordon state")
-		return ctrl.Result{}, err
+	var drainRequeue time.Duration
+	if schedule.ShouldAct {
+		if err := service.ReconcileCordon(ctx, plan, res); err != nil {
+			log.Error(err, "Failed to reconcile cordon state")
+			return ctrl.Result{}, err
+		}
+
+		var err error
+		drainRequeue, err = service.ReconcileDrain(ctx, plan, res)
+		if err != nil {
+			log.Error(err, "Failed to reconcile drain state")
+			return ctrl.Result{}, err
+		}
 	}
 
-	return ctrl.Result{}, nil
+	// drainRequeue takes priority when drain is active; schedule.RequeueAfter
+	// is used when the schedule has not yet fired (drainRequeue will be zero).
+	requeueAfter := schedule.RequeueAfter
+	if drainRequeue != 0 {
+		requeueAfter = drainRequeue
+	}
+	return ctrl.Result{RequeueAfter: requeueAfter}, nil
 
 }
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *NodeMaintenancePlanReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	// Register a cache index on spec.nodeName so filterPodsForDrain can use
+	// client.MatchingFields{"spec.nodeName": name} against the cache efficiently.
+	if err := mgr.GetFieldIndexer().IndexField(
+		context.Background(), &corev1.Pod{}, "spec.nodeName",
+		func(obj client.Object) []string {
+			return []string{obj.(*corev1.Pod).Spec.NodeName}
+		},
+	); err != nil {
+		return fmt.Errorf("indexing pods by node name: %w", err)
+	}
+
 	// Pass through spec changes (generation bump) and deletion (DeletionTimestamp set).
 	// GenerationChangedPredicate alone would filter the DeletionTimestamp update since
 	// metadata changes don't increment generation, causing plans to get stuck in Terminating.
@@ -166,29 +197,33 @@ func (r *NodeMaintenancePlanReconciler) SetupWithManager(mgr ctrl.Manager) error
 		Complete(r)
 }
 
+// ensureFinalizer adds the finalizer to the plan if not already present, so that the controller can perform cleanup on deletion.
 func (r *NodeMaintenancePlanReconciler) ensureFinalizer(ctx context.Context, plan *v1alpha1.NodeMaintenancePlan) error {
-
 	if controllerutil.ContainsFinalizer(plan, finalizerName) {
 		return nil
 	}
-
+	original := plan.DeepCopy()
 	controllerutil.AddFinalizer(plan, finalizerName)
-
-	return r.Client.Update(ctx, plan)
+	return r.Client.Patch(ctx, plan, client.MergeFrom(original))
 }
 
+// handleDeletion performs cleanup when a NodeMaintenancePlan is deleted, then removes the finalizer to allow deletion to complete.
 func (r *NodeMaintenancePlanReconciler) handleDeletion(ctx context.Context, log logr.Logger, plan *v1alpha1.NodeMaintenancePlan) error {
 	if !controllerutil.ContainsFinalizer(plan, finalizerName) {
 		return nil
 	}
-	svc := maintenance.NewMaintenanceService(r.Client, log, r.Recorder)
+	svc := maintenance.NewMaintenanceService(r.Client, log, r.Recorder, clock.RealClock{})
 	if err := svc.CleanUp(ctx, plan); err != nil {
 		return err
 	}
+	original := plan.DeepCopy()
 	controllerutil.RemoveFinalizer(plan, finalizerName)
-	return r.Client.Update(ctx, plan)
+	return r.Client.Patch(ctx, plan, client.MergeFrom(original))
 }
 
+// nodeToPlans maps a Node event to the set of NodeMaintenancePlans that reference the node in their spec,
+// so that they can be reconciled in response to node changes. This allows the controller to react to relevant
+// node changes without needing to watch all nodes and filter in Reconcile, which would be inefficient and cause unnecessary load on the API server.
 func (r *NodeMaintenancePlanReconciler) nodeToPlans(ctx context.Context, obj client.Object) []reconcile.Request {
 	node, ok := obj.(*corev1.Node)
 	if !ok {

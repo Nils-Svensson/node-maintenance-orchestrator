@@ -20,7 +20,7 @@ func (s *MaintenanceService) CleanUp(ctx context.Context, plan *v1alpha1.NodeMai
 	}
 
 	for _, node := range owned {
-		if err := s.UncordonNode(ctx, node); err != nil {
+		if _, err := s.UncordonNode(ctx, node); err != nil {
 			return fmt.Errorf("uncordoning node %q during cleanup: %w", node.Name, err)
 		}
 		if err := s.ReleaseNode(ctx, node, plan); err != nil {

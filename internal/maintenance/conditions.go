@@ -1,11 +1,19 @@
-// conditions.go contains helper utilities for managing Kubernetes conditions
-// on the NodeMaintenancePlan status.
-//
-// It provides standardized methods for setting, updating, and querying
-// metav1.Condition entries, ensuring consistent condition handling across
-// the controller.
-//
-// This abstraction avoids duplication and enforces best practices for
-// condition management.
-
 package maintenance
+
+import (
+	"github.com/Nils-Svensson/node-maintenance-orchestrator/api/v1alpha1"
+	apimeta "k8s.io/apimachinery/pkg/api/meta"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+)
+
+// setCondition upserts a condition on the plan using the standard apimeta helper,
+// which deduplicates by Type and updates LastTransitionTime only when Status changes.
+func setCondition(plan *v1alpha1.NodeMaintenancePlan, condType string, status metav1.ConditionStatus, reason, message string) {
+	apimeta.SetStatusCondition(&plan.Status.Conditions, metav1.Condition{
+		Type:               condType,
+		Status:             status,
+		ObservedGeneration: plan.Generation,
+		Reason:             reason,
+		Message:            message,
+	})
+}

@@ -4,9 +4,8 @@ metadata:
   name: cordon-workers
 spec:
   reason: "Planned maintenance"
-
-  nodeSelector:
-    matchLabels:
-      tier: gpu
+  nodes: [kind-worker3, kind-worker4]
   cordon:
+    enabled: true
+  drain: 
     enabled: true

@@ -78,6 +78,11 @@ spec:
                   options:
                     description: Drain options
                     properties:
+                      deleteEmptyDirData:
+                        description: |-
+                          Whether to delete pods with emptyDir volumes.
+                          Defaults to false
+                        type: boolean
                       force:
                         default: false
                         description: Force delete pods not backed by controllers
@@ -86,15 +91,18 @@ spec:
                         default: true
                         description: Ignore DaemonSet-managed pods
                         type: boolean
-                      ignoreStatefulSets:
-                        default: false
-                        description: Ignore pods managed by StatefulSets
-                        type: boolean
                       maxParallel:
                         default: 1
                         description: Max number of nodes drained in parallel
                         format: int32
                         type: integer
+                      respectPodDisruptionBudgets:
+                        default: true
+                        description: |-
+                          Whether to honour PodDisruptionBudgets during eviction. When false, pods
+                          blocked by a PDB are force-deleted via the Delete API instead of the
+                          Eviction API, bypassing budget checks entirely.
+                        type: boolean
                       timeoutSeconds:
                         description: Timeout for pod eviction (seconds)
                         format: int64
@@ -253,6 +261,9 @@ spec:
                       type: integer
                     cordoned:
                       type: boolean
+                    cordonedAt:
+                      format: date-time
+                      type: string
                     drainProgress:
                       format: int32
                       type: integer

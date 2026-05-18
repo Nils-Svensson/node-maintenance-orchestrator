@@ -7,9 +7,13 @@ import (
 	"fmt"
 
 	"github.com/Nils-Svensson/node-maintenance-orchestrator/api/v1alpha1"
+	corev1 "k8s.io/api/core/v1"
 )
 
-func (s *MaintenanceService) ReconcileOwnership(ctx context.Context, plan *v1alpha1.NodeMaintenancePlan, res *OwnershipResolution) error {
+// ReconcileOwnership adopts and releases nodes according to the ownership resolution.
+// cordonNow should be true when the cordon schedule is currently active; it gates
+// whether nodes are cordoned at the moment of adoption.
+func (s *MaintenanceService) ReconcileOwnership(ctx context.Context, plan *v1alpha1.NodeMaintenancePlan, res *OwnershipResolution, cordonNow bool) error {
 
 	for _, node := range res.Conflicting {
 		s.log.Info(
@@ -33,7 +37,7 @@ func (s *MaintenanceService) ReconcileOwnership(ctx context.Context, plan *v1alp
 			s.log.V(1).Info("skipping re-adoption of drifted node", "node", node.Name)
 			continue
 		}
-		if err := s.AdoptNode(ctx, node, plan, cordonEnabled); err != nil {
+		if err := s.AdoptNode(ctx, node, plan, cordonEnabled && cordonNow); err != nil {
 			return fmt.Errorf("adopting node %q: %w", node.Name, err)
 		}
 	}
@@ -52,19 +56,32 @@ func (s *MaintenanceService) ReconcileCordon(ctx context.Context, plan *v1alpha1
 		}
 
 		if cordonEnabled {
-			if err := s.CordonNode(ctx, node); err != nil {
+			changed, err := s.CordonNode(ctx, node)
+			if err != nil {
 				return fmt.Errorf("cordoning node %q: %w", node.Name, err)
 			}
+			if changed {
+				s.recorder.Eventf(plan, corev1.EventTypeNormal, "NodeCordoned", "node %q cordoned", node.Name)
+			}
 		} else {
-			if err := s.UncordonNode(ctx, node); err != nil {
+			// A node cordoned by an external actor (no operator annotation) is left
+			// alone; ReconcileDrift has already logged the event.
+			if node.Spec.Unschedulable && node.Annotations[CordonedAnnotation] != "true" {
+				continue
+			}
+			changed, err := s.UncordonNode(ctx, node)
+			if err != nil {
 				return fmt.Errorf("uncordoning node %q: %w", node.Name, err)
+			}
+			if changed {
+				s.recorder.Eventf(plan, corev1.EventTypeNormal, "NodeUncordoned", "node %q uncordoned", node.Name)
 			}
 		}
 	}
 
 	// Nodes removed from desired state.
 	for _, node := range res.ToRelease {
-		if err := s.UncordonNode(ctx, node); err != nil {
+		if _, err := s.UncordonNode(ctx, node); err != nil {
 			return fmt.Errorf(
 				"uncordoning node %q: %w",
 				node.Name,
