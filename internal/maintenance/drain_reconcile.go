@@ -75,7 +75,16 @@ func (s *MaintenanceService) applyDrainResults(ctx context.Context, plan *v1alph
 		switch {
 		case r.Err == nil && r.Outcome.Evicted == 0:
 			// Node is fully drained — nothing evictable found.
+			wasDraining := wasNodeDraining(original, r.NodeName)
 			updateNodeDrainStatus(plan, r.NodeName, r.Outcome, nil)
+			if wasDraining {
+				s.recorder.Eventf(plan, corev1.EventTypeNormal, "NodeDrained",
+					"node %q has been fully drained", r.NodeName)
+			}
+			if markNodeReadyForMaintenance(plan, r.NodeName) {
+				s.recorder.Eventf(plan, corev1.EventTypeNormal, "NodeReadyForMaintenance",
+					"node %q is ready for maintenance", r.NodeName)
+			}
 
 		case r.Err == nil && r.Outcome.Evicted > 0:
 			// Evictions fired; pods are terminating.
@@ -132,12 +141,21 @@ func (s *MaintenanceService) applyDrainResults(ctx context.Context, plan *v1alph
 		}
 	}
 
+	// Recompute plan-level ReadyForMaintenance aggregate and fire a one-time event
+	// on the transition from false → true.
+	wasAllReady := original.Status.AllNodesReadyForMaintenance
+	plan.Status.AllNodesReadyForMaintenance = allNodesReady(plan)
+	if !wasAllReady && plan.Status.AllNodesReadyForMaintenance {
+		s.log.Info("all nodes ready for maintenance", "plan", plan.Name)
+		s.recorder.Eventf(plan, corev1.EventTypeNormal, "AllNodesReadyForMaintenance",
+			"all managed nodes are ready for maintenance")
+	}
+
 	if err := s.client.Status().Patch(ctx, plan, client.MergeFrom(original)); err != nil {
 		return 0, fmt.Errorf("patching drain status: %w", err)
 	}
 
 	if allDone {
-		s.recorder.Eventf(plan, corev1.EventTypeNormal, "DrainSucceeded", "all target pods evicted from managed nodes")
 		return 0, nil
 	}
 	if evictionsInFlight {
@@ -179,11 +197,72 @@ func updateNodeDrainStatus(plan *v1alpha1.NodeMaintenancePlan, nodeName string, 
 			continue
 		}
 		ns := &plan.Status.Nodes[i]
+
+		// InitialPodCount is set once — on the first pass where there are pods
+		// to drain. It never resets so it stays valid as the denominator for
+		// progress even after pods finish terminating.
+		if ns.InitialPodCount == 0 && outcome.Total > 0 {
+			ns.InitialPodCount = int32(outcome.Total)
+		}
+
 		ns.TotalPods = int32(outcome.Total)
 		ns.EvictablePods = int32(outcome.Evictable)
+		ns.BlockedPods = int32(outcome.Total - outcome.Evictable)
+		ns.EvictedTotal += int32(outcome.Evicted)
 		ns.Issues = issues
+
+		if ns.InitialPodCount > 0 {
+			remaining := min(int32(outcome.Total), ns.InitialPodCount)
+			ns.DrainProgress = (ns.InitialPodCount - remaining) * 100 / ns.InitialPodCount
+		}
+
 		return
 	}
+}
+
+// markNodeReadyForMaintenance sets ReadyForMaintenance=true on the matching
+// NodeStatus entry when the node is cordoned and fully drained. Returns true
+// if the flag was newly set (transition), so the caller can fire an event.
+func markNodeReadyForMaintenance(plan *v1alpha1.NodeMaintenancePlan, nodeName string) (transitioned bool) {
+	for i := range plan.Status.Nodes {
+		ns := &plan.Status.Nodes[i]
+		if ns.Name != nodeName {
+			continue
+		}
+		if !ns.Cordoned || ns.ReadyForMaintenance {
+			return false
+		}
+		ns.ReadyForMaintenance = true
+		ns.DrainProgress = 100
+		return true
+	}
+	return false
+}
+
+// wasNodeDraining returns true if the node had pods to drain in the previous
+// reconcile pass but had not yet completed (DrainProgress < 100). Used to
+// fire the NodeDrained event exactly once on the completion transition.
+func wasNodeDraining(plan *v1alpha1.NodeMaintenancePlan, nodeName string) bool {
+	for _, ns := range plan.Status.Nodes {
+		if ns.Name == nodeName {
+			return ns.InitialPodCount > 0 && ns.DrainProgress < 100
+		}
+	}
+	return false
+}
+
+// allNodesReady returns true when every node in the plan status has
+// ReadyForMaintenance set and there is at least one node.
+func allNodesReady(plan *v1alpha1.NodeMaintenancePlan) bool {
+	if len(plan.Status.Nodes) == 0 {
+		return false
+	}
+	for _, ns := range plan.Status.Nodes {
+		if !ns.ReadyForMaintenance {
+			return false
+		}
+	}
+	return true
 }
 
 // blockedPodIssues converts a drainBlockedError into NodeIssue entries.

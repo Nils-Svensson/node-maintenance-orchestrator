@@ -20,6 +20,14 @@ import (
 
 func (s *MaintenanceService) UpdateStatus(ctx context.Context, plan *v1alpha1.NodeMaintenancePlan, res *OwnershipResolution) error {
 
+	// Index existing per-node status so drain counters and progress survive
+	// across reconcile passes. UpdateStatus only owns the fields below; all
+	// other fields are preserved from the previous status entry.
+	existing := make(map[string]v1alpha1.NodeStatus, len(plan.Status.Nodes))
+	for _, ns := range plan.Status.Nodes {
+		existing[ns.Name] = ns
+	}
+
 	statuses := make([]v1alpha1.NodeStatus, 0, len(res.All))
 
 	for _, node := range res.All {
@@ -33,12 +41,15 @@ func (s *MaintenanceService) UpdateStatus(ctx context.Context, plan *v1alpha1.No
 			drifted, reason = GetNodeDriftState(plan, node.Name)
 		}
 
-		statuses = append(statuses, v1alpha1.NodeStatus{
-			Name:        node.Name,
-			Cordoned:    node.Spec.Unschedulable,
-			Drifted:     drifted,
-			DriftReason: reason,
-		})
+		// Start from the previous entry so drain counters are preserved, then
+		// overwrite only the fields this function is responsible for.
+		ns := existing[node.Name]
+		ns.Name = node.Name
+		ns.Cordoned = node.Spec.Unschedulable
+		ns.Drifted = drifted
+		ns.DriftReason = reason
+
+		statuses = append(statuses, ns)
 	}
 
 	original := plan.DeepCopy()

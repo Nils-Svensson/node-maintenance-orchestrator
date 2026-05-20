@@ -25,6 +25,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -277,6 +278,181 @@ var _ = Describe("Manager", Ordered, func() {
 		//    fmt.Sprintf(`controller_runtime_reconcile_total{controller="%s",result="success"} 1`,
 		//    strings.ToLower(<Kind>),
 		// ))
+	})
+
+	Context("NodeMaintenancePlan", Ordered, func() {
+		var workerNodes []string
+
+		SetDefaultEventuallyTimeout(2 * time.Minute)
+		SetDefaultEventuallyPollingInterval(2 * time.Second)
+
+		BeforeAll(func() {
+			By("listing worker nodes")
+			cmd := exec.Command("kubectl", "get", "nodes",
+				"--selector=!node-role.kubernetes.io/control-plane",
+				"-o", "jsonpath={.items[*].metadata.name}")
+			output, err := utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred(), "failed to list worker nodes")
+			workerNodes = strings.Fields(strings.TrimSpace(output))
+			Expect(len(workerNodes)).To(BeNumerically(">=", 2),
+				"e2e tests require at least 2 worker nodes")
+		})
+
+		AfterEach(func() {
+			By("deleting all NMPs")
+			cmd := exec.Command("kubectl", "delete", "nmp", "--all", "--wait=true", "--timeout=60s")
+			_, _ = utils.Run(cmd)
+		})
+
+		It("should adopt and cordon nodes, then release on plan deletion", func() {
+			target := workerNodes[0]
+			nmpName := "e2e-cordon"
+
+			By("creating NMP with cordon enabled")
+			nmpYAML := fmt.Sprintf(`
+apiVersion: maintenance.nmoo.io/v1alpha1
+kind: NodeMaintenancePlan
+metadata:
+  name: %s
+spec:
+  nodes:
+    - %s
+  reason: "e2e cordon test"
+  cordon:
+    enabled: true
+`, nmpName, target)
+			cmd := exec.Command("kubectl", "apply", "-f", "-")
+			cmd.Stdin = strings.NewReader(nmpYAML)
+			_, err := utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred())
+
+			By("waiting for node to be cordoned")
+			Eventually(func(g Gomega) {
+				cmd := exec.Command("kubectl", "get", "node", target,
+					"-o", "jsonpath={.spec.unschedulable}")
+				output, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(output).To(Equal("true"))
+			}).Should(Succeed())
+
+			By("verifying managed-by annotation is set")
+			cmd = exec.Command("kubectl", "get", "node", target,
+				"-o", "jsonpath={.metadata.annotations.maintenance\\.nmoo\\.io/managed-by}")
+			output, err := utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(output).To(Equal(nmpName))
+
+			By("deleting the NMP and waiting for cleanup")
+			cmd = exec.Command("kubectl", "delete", "nmp", nmpName, "--wait=true", "--timeout=60s")
+			_, err = utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred())
+
+			By("verifying node is uncordoned")
+			Eventually(func(g Gomega) {
+				cmd := exec.Command("kubectl", "get", "node", target,
+					"-o", "jsonpath={.spec.unschedulable}")
+				output, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(output).To(Or(Equal("false"), BeEmpty()))
+			}).Should(Succeed())
+
+			By("verifying managed-by annotation is removed")
+			cmd = exec.Command("kubectl", "get", "node", target,
+				"-o", "jsonpath={.metadata.annotations.maintenance\\.nmoo\\.io/managed-by}")
+			output, err = utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(output).To(BeEmpty())
+		})
+
+		It("should drain pods when cordon and drain are enabled", func() {
+			target := workerNodes[1]
+			nmpName := "e2e-drain"
+			deployName := "e2e-drain-workload"
+
+			DeferCleanup(func() {
+				cmd := exec.Command("kubectl", "delete", "deployment", deployName, "-n", "default",
+					"--ignore-not-found=true", "--wait=false")
+				_, _ = utils.Run(cmd)
+			})
+
+			By("deploying a test workload on the target node")
+			deployYAML := fmt.Sprintf(`
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: %s
+  namespace: default
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: %s
+  template:
+    metadata:
+      labels:
+        app: %s
+    spec:
+      terminationGracePeriodSeconds: 1
+      nodeSelector:
+        kubernetes.io/hostname: %s
+      containers:
+      - name: pause
+        image: registry.k8s.io/pause:3.9
+`, deployName, deployName, deployName, target)
+			cmd := exec.Command("kubectl", "apply", "-f", "-")
+			cmd.Stdin = strings.NewReader(deployYAML)
+			_, err := utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred())
+
+			By("waiting for test pod to be running on the target node")
+			Eventually(func(g Gomega) {
+				cmd := exec.Command("kubectl", "get", "pods", "-n", "default",
+					"-l", fmt.Sprintf("app=%s", deployName),
+					"--field-selector", fmt.Sprintf("spec.nodeName=%s,status.phase=Running", target),
+					"-o", "name")
+				output, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(strings.TrimSpace(output)).NotTo(BeEmpty())
+			}).Should(Succeed())
+
+			By("creating NMP with cordon and drain enabled")
+			nmpYAML := fmt.Sprintf(`
+apiVersion: maintenance.nmoo.io/v1alpha1
+kind: NodeMaintenancePlan
+metadata:
+  name: %s
+spec:
+  nodes:
+    - %s
+  reason: "e2e drain test"
+  cordon:
+    enabled: true
+  drain:
+    enabled: true
+`, nmpName, target)
+			cmd = exec.Command("kubectl", "apply", "-f", "-")
+			cmd.Stdin = strings.NewReader(nmpYAML)
+			_, err = utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred())
+
+			By("waiting for DrainSucceeded condition")
+			Eventually(func(g Gomega) {
+				cmd := exec.Command("kubectl", "get", "nmp", nmpName,
+					"-o", `jsonpath={.status.conditions[?(@.type=="DrainSucceeded")].status}`)
+				output, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(output).To(Equal("True"))
+			}).Should(Succeed())
+
+			By("verifying no pods from the workload remain on the target node")
+			cmd = exec.Command("kubectl", "get", "pods", "-n", "default",
+				"-l", fmt.Sprintf("app=%s", deployName),
+				"--field-selector", fmt.Sprintf("spec.nodeName=%s", target),
+				"-o", "name")
+			output, err := utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(strings.TrimSpace(output)).To(BeEmpty())
+		})
 	})
 })
 

@@ -78,7 +78,7 @@ func TestCheckSchedule(t *testing.T) {
 
 func TestCheckSchedule_RequeueIncludesBuffer(t *testing.T) {
 	result := maintenance.CheckSchedule(&future, false, epoch)
-	expected := future.Time.Sub(epoch) + 100*time.Millisecond
+	expected := future.Sub(epoch) + 100*time.Millisecond
 	if result.RequeueAfter != expected {
 		t.Errorf("RequeueAfter = %v, want %v", result.RequeueAfter, expected)
 	}
@@ -89,13 +89,12 @@ func TestComputeSchedule_CordonDisabled(t *testing.T) {
 	svc := maintenance.NewMaintenanceService(nil, logr.Discard(), nil, fakeClock)
 
 	plan := &v1alpha1.NodeMaintenancePlan{}
-	// cordon not set at all
 	result := svc.ComputeSchedule(plan)
-	if !result.ShouldAct {
-		t.Error("ShouldAct should be true when cordon is disabled (cleanup path)")
+	if !result.Cordon.ShouldAct {
+		t.Error("Cordon.ShouldAct should be true when cordon is disabled (cleanup path)")
 	}
-	if result.RequeueAfter != 0 {
-		t.Errorf("unexpected RequeueAfter %v when cordon disabled", result.RequeueAfter)
+	if result.Cordon.RequeueAfter != 0 {
+		t.Errorf("unexpected Cordon.RequeueAfter %v when cordon disabled", result.Cordon.RequeueAfter)
 	}
 }
 
@@ -107,8 +106,8 @@ func TestComputeSchedule_CordonEnabledNoStartAt(t *testing.T) {
 	plan.Spec.Cordon = &v1alpha1.CordonSpec{Enabled: true}
 
 	result := svc.ComputeSchedule(plan)
-	if !result.ShouldAct {
-		t.Error("ShouldAct should be true when cordon enabled with no startAt")
+	if !result.Cordon.ShouldAct {
+		t.Error("Cordon.ShouldAct should be true when cordon enabled with no startAt")
 	}
 }
 
@@ -120,11 +119,11 @@ func TestComputeSchedule_CordonEnabledFutureStartAt(t *testing.T) {
 	plan.Spec.Cordon = &v1alpha1.CordonSpec{Enabled: true, StartAt: &future}
 
 	result := svc.ComputeSchedule(plan)
-	if result.ShouldAct {
-		t.Error("ShouldAct should be false when startAt is in the future")
+	if result.Cordon.ShouldAct {
+		t.Error("Cordon.ShouldAct should be false when startAt is in the future")
 	}
-	if result.RequeueAfter == 0 {
-		t.Error("expected non-zero RequeueAfter for future startAt")
+	if result.Cordon.RequeueAfter == 0 {
+		t.Error("expected non-zero Cordon.RequeueAfter for future startAt")
 	}
 }
 
@@ -136,8 +135,86 @@ func TestComputeSchedule_CordonEnabledPastStartAt(t *testing.T) {
 	plan.Spec.Cordon = &v1alpha1.CordonSpec{Enabled: true, StartAt: &past}
 
 	result := svc.ComputeSchedule(plan)
-	if !result.ShouldAct {
-		t.Error("ShouldAct should be true when startAt is in the past")
+	if !result.Cordon.ShouldAct {
+		t.Error("Cordon.ShouldAct should be true when startAt is in the past")
+	}
+}
+
+func TestComputeSchedule_DrainDisabled(t *testing.T) {
+	fakeClock := clocktesting.NewFakeClock(epoch)
+	svc := maintenance.NewMaintenanceService(nil, logr.Discard(), nil, fakeClock)
+
+	plan := &v1alpha1.NodeMaintenancePlan{}
+	result := svc.ComputeSchedule(plan)
+	if result.Drain.ShouldAct {
+		t.Error("Drain.ShouldAct should be false when drain is disabled")
+	}
+}
+
+func TestComputeSchedule_DrainEnabledNoStartAt(t *testing.T) {
+	fakeClock := clocktesting.NewFakeClock(epoch)
+	svc := maintenance.NewMaintenanceService(nil, logr.Discard(), nil, fakeClock)
+
+	plan := &v1alpha1.NodeMaintenancePlan{}
+	plan.Spec.Drain = &v1alpha1.DrainSpec{Enabled: true}
+
+	result := svc.ComputeSchedule(plan)
+	if !result.Drain.ShouldAct {
+		t.Error("Drain.ShouldAct should be true when drain enabled with no startAt")
+	}
+}
+
+func TestComputeSchedule_DrainEnabledFutureStartAt(t *testing.T) {
+	fakeClock := clocktesting.NewFakeClock(epoch)
+	svc := maintenance.NewMaintenanceService(nil, logr.Discard(), nil, fakeClock)
+
+	plan := &v1alpha1.NodeMaintenancePlan{}
+	plan.Spec.Drain = &v1alpha1.DrainSpec{Enabled: true, StartAt: &future}
+
+	result := svc.ComputeSchedule(plan)
+	if result.Drain.ShouldAct {
+		t.Error("Drain.ShouldAct should be false when drain startAt is in the future")
+	}
+	if result.Drain.RequeueAfter == 0 {
+		t.Error("expected non-zero Drain.RequeueAfter for future drain startAt")
+	}
+}
+
+func TestComputeSchedule_CordonNowDrainLater(t *testing.T) {
+	fakeClock := clocktesting.NewFakeClock(epoch)
+	svc := maintenance.NewMaintenanceService(nil, logr.Discard(), nil, fakeClock)
+
+	plan := &v1alpha1.NodeMaintenancePlan{}
+	plan.Spec.Cordon = &v1alpha1.CordonSpec{Enabled: true}
+	plan.Spec.Drain = &v1alpha1.DrainSpec{Enabled: true, StartAt: &future}
+
+	result := svc.ComputeSchedule(plan)
+	if !result.Cordon.ShouldAct {
+		t.Error("Cordon.ShouldAct should be true (no startAt)")
+	}
+	if result.Drain.ShouldAct {
+		t.Error("Drain.ShouldAct should be false (future startAt)")
+	}
+	if result.RequeueAfter == 0 {
+		t.Error("expected non-zero RequeueAfter from pending drain schedule")
+	}
+}
+
+func TestComputeSchedule_RequeueIsMinNonZero(t *testing.T) {
+	cordonFuture := metav1.NewTime(epoch.Add(30 * time.Minute))
+	drainFuture := metav1.NewTime(epoch.Add(90 * time.Minute))
+
+	fakeClock := clocktesting.NewFakeClock(epoch)
+	svc := maintenance.NewMaintenanceService(nil, logr.Discard(), nil, fakeClock)
+
+	plan := &v1alpha1.NodeMaintenancePlan{}
+	plan.Spec.Cordon = &v1alpha1.CordonSpec{Enabled: true, StartAt: &cordonFuture}
+	plan.Spec.Drain = &v1alpha1.DrainSpec{Enabled: true, StartAt: &drainFuture}
+
+	result := svc.ComputeSchedule(plan)
+	if result.RequeueAfter != result.Cordon.RequeueAfter {
+		t.Errorf("RequeueAfter should be min of cordon/drain, got %v want %v",
+			result.RequeueAfter, result.Cordon.RequeueAfter)
 	}
 }
 
@@ -145,7 +222,6 @@ func TestComputeSchedule_CordonEnabledPastStartAt(t *testing.T) {
 // time after it has already passed, the operator correctly defers again rather than
 // continuing to act.
 func TestComputeSchedule_StartAtPushedOut(t *testing.T) {
-	// Clock starts at epoch. T is 1h ahead, T+x is 2h ahead.
 	T := metav1.NewTime(epoch.Add(1 * time.Hour))
 	Tx := metav1.NewTime(epoch.Add(2 * time.Hour))
 
@@ -157,31 +233,31 @@ func TestComputeSchedule_StartAtPushedOut(t *testing.T) {
 
 	// Before T: not yet active.
 	result := svc.ComputeSchedule(plan)
-	if result.ShouldAct {
-		t.Fatal("expected ShouldAct=false before startAt")
+	if result.Cordon.ShouldAct {
+		t.Fatal("expected Cordon.ShouldAct=false before startAt")
 	}
 
 	// Advance clock past T: now active.
 	fakeClock.SetTime(epoch.Add(90 * time.Minute))
 	result = svc.ComputeSchedule(plan)
-	if !result.ShouldAct {
-		t.Fatal("expected ShouldAct=true after startAt has passed")
+	if !result.Cordon.ShouldAct {
+		t.Fatal("expected Cordon.ShouldAct=true after startAt has passed")
 	}
 
 	// startAt is pushed out to T+x (still in the future): must defer again.
 	plan.Spec.Cordon.StartAt = &Tx
 	result = svc.ComputeSchedule(plan)
-	if result.ShouldAct {
-		t.Error("expected ShouldAct=false after startAt was pushed to a future time")
+	if result.Cordon.ShouldAct {
+		t.Error("expected Cordon.ShouldAct=false after startAt was pushed to a future time")
 	}
-	if result.RequeueAfter == 0 {
-		t.Error("expected non-zero RequeueAfter after startAt pushed out")
+	if result.Cordon.RequeueAfter == 0 {
+		t.Error("expected non-zero Cordon.RequeueAfter after startAt pushed out")
 	}
 
 	// Advance clock past T+x: active again.
 	fakeClock.SetTime(epoch.Add(3 * time.Hour))
 	result = svc.ComputeSchedule(plan)
-	if !result.ShouldAct {
-		t.Error("expected ShouldAct=true after updated startAt has passed")
+	if !result.Cordon.ShouldAct {
+		t.Error("expected Cordon.ShouldAct=true after updated startAt has passed")
 	}
 }

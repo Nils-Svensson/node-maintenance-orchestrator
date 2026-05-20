@@ -182,6 +182,10 @@ spec:
           status:
             description: NodeMaintenancePlanStatus defines observed state
             properties:
+              allNodesReadyForMaintenance:
+                description: True when all nodes have status readyForMaintenance =
+                  true
+                type: boolean
               conditions:
                 description: Conditions represent current state of the plan
                 items:
@@ -264,6 +268,51 @@ spec:
                     cordonedAt:
                       format: date-time
                       type: string
+                    drainPreview:
+                      description: Dry-run analysis computed before drain starts.
+                      properties:
+                        computedAt:
+                          description: When this preview was last computed.
+                          format: date-time
+                          type: string
+                        evictableCount:
+                          description: Number of pods that will be evicted with current
+                            drain settings.
+                          format: int32
+                          type: integer
+                        issues:
+                          description: |-
+                            Issues lists pods that will block or may complicate drain.
+                            An empty list means no issues were detected at preview time.
+                          items:
+                            description: NodeIssue represents a detected issue
+                            properties:
+                              message:
+                                description: Human-readable message
+                                type: string
+                              podRef:
+                                description: Related pod if applicable
+                                properties:
+                                  name:
+                                    type: string
+                                  namespace:
+                                    type: string
+                                type: object
+                              type:
+                                description: Type of issue (e.g. PDBBlocked, Unschedulable,
+                                  DriftDetected)
+                                type: string
+                            required:
+                            - message
+                            - type
+                            type: object
+                          type: array
+                        skippedCount:
+                          description: Number of pods that will be skipped (DaemonSets,
+                            mirror pods, completed pods).
+                          format: int32
+                          type: integer
+                      type: object
                     drainProgress:
                       format: int32
                       type: integer
@@ -274,8 +323,17 @@ spec:
                     evictablePods:
                       format: int32
                       type: integer
+                    evictedTotal:
+                      format: int32
+                      type: integer
+                    initialPodCount:
+                      description: |-
+                        InitialPodCount is the number of pods on the node at the time it was first cordoned or marked for maintenance.
+                        This serves as a baseline for tracking drain progress.
+                      format: int32
+                      type: integer
                     issues:
-                      description: Issues detected during preview or execution
+                      description: Issues detected during drain execution.
                       items:
                         description: NodeIssue represents a detected issue
                         properties:
@@ -301,7 +359,14 @@ spec:
                       type: array
                     name:
                       type: string
+                    readyForMaintenance:
+                      description: True when adpoted+cordoned+drained are all satisfied.
+                        I should figure out if adpoted
+                      type: boolean
                     totalPods:
+                      description: |-
+                        Counter for draining progress and pod classification. TotalPods is the total number
+                        of pods on the node calculated on each reconciliation loop.
                       format: int32
                       type: integer
                     unschedulablePods:
@@ -314,6 +379,15 @@ spec:
               observedGeneration:
                 description: ObservedGeneration reflects latest reconciled spec
                 format: int64
+                type: integer
+              totalEvictablePods:
+                description: Total evictable pods across all nodes at last preview.
+                format: int32
+                type: integer
+              totalPreviewIssues:
+                description: Total number of preview issues detected across all nodes
+                  at last preview.
+                format: int32
                 type: integer
             type: object
         type: object

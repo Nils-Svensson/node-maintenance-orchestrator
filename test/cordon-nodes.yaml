@@ -9,3 +9,4 @@ spec:
     enabled: true
   drain: 
     enabled: true
+    startAt: "2026-07-07T00:00:00Z"

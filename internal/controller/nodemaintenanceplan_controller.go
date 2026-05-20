@@ -123,7 +123,7 @@ func (r *NodeMaintenancePlanReconciler) Reconcile(ctx context.Context, req ctrl.
 
 	schedule := service.ComputeSchedule(plan)
 
-	if err := service.ReconcileOwnership(ctx, plan, res, schedule.ShouldAct); err != nil {
+	if err := service.ReconcileOwnership(ctx, plan, res, schedule.Cordon.ShouldAct); err != nil {
 		log.Error(err, "Failed to reconcile ownership")
 		return ctrl.Result{}, err
 	}
@@ -136,18 +136,25 @@ func (r *NodeMaintenancePlanReconciler) Reconcile(ctx context.Context, req ctrl.
 		return ctrl.Result{}, err
 	}
 
+	if err := service.ReconcilePreview(ctx, plan, res); err != nil {
+		log.Error(err, "Failed to reconcile preview")
+		return ctrl.Result{}, err
+	}
+
 	if err := service.ReconcileDrift(ctx, plan, res); err != nil {
 		log.Error(err, "Failed to reconcile drift")
 		return ctrl.Result{}, err
 	}
 
-	var drainRequeue time.Duration
-	if schedule.ShouldAct {
+	if schedule.Cordon.ShouldAct {
 		if err := service.ReconcileCordon(ctx, plan, res); err != nil {
 			log.Error(err, "Failed to reconcile cordon state")
 			return ctrl.Result{}, err
 		}
+	}
 
+	var drainRequeue time.Duration
+	if schedule.Drain.ShouldAct {
 		var err error
 		drainRequeue, err = service.ReconcileDrain(ctx, plan, res)
 		if err != nil {
@@ -191,7 +198,7 @@ func (r *NodeMaintenancePlanReconciler) SetupWithManager(mgr ctrl.Manager) error
 
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&v1alpha1.NodeMaintenancePlan{}, builder.WithPredicates(planPredicate)).
-		WithOptions(controller.Options{MaxConcurrentReconciles: 1}).
+		WithOptions(controller.Options{MaxConcurrentReconciles: 10}).
 		Watches(&corev1.Node{}, handler.EnqueueRequestsFromMapFunc(r.nodeToPlans), builder.WithPredicates(nodeMaintenancePredicates(logf.Log.WithName("node-predicate")))).
 		Named("nodemaintenanceplan").
 		Complete(r)

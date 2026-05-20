@@ -32,7 +32,7 @@ func (s *MaintenanceService) ReconcileDrift(ctx context.Context, plan *v1alpha1.
 				plan,
 				"Warning",
 				"DriftDetected",
-				"node %q drifted (%s): releasing ownership, will not re-adopt until removed from spec",
+				"node %q drifted (%s): ownership released. Remove and re-add the node to the plan spec to resume management.",
 				node.Name,
 				reason,
 			)

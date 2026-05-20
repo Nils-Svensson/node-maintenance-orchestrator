@@ -8,12 +8,24 @@ import (
 	"github.com/Nils-Svensson/node-maintenance-orchestrator/api/v1alpha1"
 )
 
+// Maybe tweak this buffer after testing in real scenarios.
+// It is intended to account for small discrepancies in scheduling and controller execution time,
+// so it should be large enough to prevent unnecessary requeues but small enough
+// to not cause noticeable delays when the schedule is actually due.
 const scheduleBuffer = 100 * time.Millisecond
 
 type ScheduleResult struct {
 	// ShouldAct is true if the scheduled time has arrived.
 	ShouldAct bool
 	// RequeueAfter is set when ShouldAct is false, indicating how long to wait.
+	RequeueAfter time.Duration
+}
+
+// PlanSchedule holds independent schedule results for each maintenance phase.
+type PlanSchedule struct {
+	Cordon ScheduleResult
+	Drain  ScheduleResult
+	// RequeueAfter is the minimum non-zero duration across all phases.
 	RequeueAfter time.Duration
 }
 
@@ -29,28 +41,43 @@ func CheckSchedule(startAt *metav1.Time, alreadyActed bool, now time.Time) Sched
 	}
 	return ScheduleResult{
 		ShouldAct:    false,
-		RequeueAfter: startAt.Time.Sub(now) + scheduleBuffer,
+		RequeueAfter: startAt.Sub(now) + scheduleBuffer,
 	}
 }
 
-// ComputeSchedule returns the schedule result for the plan's cordon operation,
-// using the service's injected clock.
+// ComputeSchedule returns per-phase schedule results for the plan.
 //
-// When cordon is disabled, ShouldAct is always true so that ReconcileCordon can
-// clean up any operator-applied cordons regardless of scheduling.
+// Cordon: when disabled, ShouldAct=true so ReconcileCordon can clean up any
+// operator-applied cordons. When enabled, gated by cordon.startAt.
 //
-// alreadyActed is always false for cordon because cordon is an ongoing state to
-// maintain, not a one-shot action. It is meaningful for drain (future).
-//
-// TODO: extend to include drain once drain scheduling is implemented.
-func (s *MaintenanceService) ComputeSchedule(plan *v1alpha1.NodeMaintenancePlan) ScheduleResult {
+// Drain: when disabled, ShouldAct=false. When enabled, gated by drain.startAt.
+// alreadyActed is false for both phases — each phase manages its own idempotency.
+func (s *MaintenanceService) ComputeSchedule(plan *v1alpha1.NodeMaintenancePlan) PlanSchedule {
+	now := s.clock.Now()
+
 	cordonEnabled := plan.Spec.Cordon != nil && plan.Spec.Cordon.Enabled
+	var cordon ScheduleResult
 	if !cordonEnabled {
-		return ScheduleResult{ShouldAct: true}
+		cordon = ScheduleResult{ShouldAct: true}
+	} else {
+		cordon = CheckSchedule(plan.Spec.Cordon.StartAt, false, now)
 	}
-	var startAt *metav1.Time
-	if plan.Spec.Cordon != nil {
-		startAt = plan.Spec.Cordon.StartAt
+
+	drainEnabled := plan.Spec.Drain != nil && plan.Spec.Drain.Enabled
+	var drain ScheduleResult
+	if drainEnabled {
+		drain = CheckSchedule(plan.Spec.Drain.StartAt, false, now)
 	}
-	return CheckSchedule(startAt, false, s.clock.Now())
+
+	// Both non-zero: pick the sooner requeue. One zero: max picks the non-zero value.
+	requeue := max(cordon.RequeueAfter, drain.RequeueAfter)
+	if cordon.RequeueAfter > 0 && drain.RequeueAfter > 0 {
+		requeue = min(cordon.RequeueAfter, drain.RequeueAfter)
+	}
+
+	return PlanSchedule{
+		Cordon:       cordon,
+		Drain:        drain,
+		RequeueAfter: requeue,
+	}
 }

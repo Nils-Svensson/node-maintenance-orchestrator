@@ -96,6 +96,10 @@ func (s *MaintenanceService) ReconcileCordon(ctx context.Context, plan *v1alpha1
 				err,
 			)
 		}
+
+		s.log.Info("node removed from plan spec and released", "node", node.Name)
+		s.recorder.Eventf(plan, corev1.EventTypeNormal, "NodeReleased",
+			"node %q removed from plan spec, uncordoned and released", node.Name)
 	}
 
 	return nil

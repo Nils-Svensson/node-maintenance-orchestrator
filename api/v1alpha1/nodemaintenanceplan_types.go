@@ -152,6 +152,27 @@ type NodeIssue struct {
 	PodRef *PodReference `json:"podRef,omitempty"`
 }
 
+// NodeDrainPreview holds a dry-run analysis of what drain would do to a node.
+// Computed before drain starts and frozen once DrainInProgress becomes true.
+type NodeDrainPreview struct {
+	// Number of pods that will be evicted with current drain settings.
+	// +optional
+	EvictableCount int32 `json:"evictableCount,omitempty"`
+
+	// Number of pods that will be skipped (DaemonSets, mirror pods, completed pods).
+	// +optional
+	SkippedCount int32 `json:"skippedCount,omitempty"`
+
+	// Issues lists pods that will block or may complicate drain.
+	// An empty list means no issues were detected at preview time.
+	// +optional
+	Issues []NodeIssue `json:"issues,omitempty"`
+
+	// When this preview was last computed.
+	// +optional
+	ComputedAt *metav1.Time `json:"computedAt,omitempty"`
+}
+
 // NodeStatus represents per-node observed state
 type NodeStatus struct {
 	Name string `json:"name"`
@@ -167,14 +188,33 @@ type NodeStatus struct {
 
 	DriftReason string `json:"driftReason,omitempty"`
 
-	TotalPods         int32 `json:"totalPods,omitempty"`
-	EvictablePods     int32 `json:"evictablePods,omitempty"`
-	BlockedPods       int32 `json:"blockedPods,omitempty"`
+	// Counter for draining progress and pod classification. TotalPods is the total number
+	// of pods on the node calculated on each reconciliation loop.
+	TotalPods int32 `json:"totalPods,omitempty"`
+
+	// InitialPodCount is the number of pods on the node at the time it was first cordoned or marked for maintenance.
+	// This serves as a baseline for tracking drain progress.
+	InitialPodCount int32 `json:"initialPodCount,omitempty"`
+
+	EvictablePods int32 `json:"evictablePods,omitempty"`
+
+	BlockedPods int32 `json:"blockedPods,omitempty"`
+
 	UnschedulablePods int32 `json:"unschedulablePods,omitempty"`
 
-	// Issues detected during preview or execution
+	EvictedTotal int32 `json:"evictedTotal,omitempty"`
+
+	// Dry-run analysis computed before drain starts.
+	// +optional
+	DrainPreview *NodeDrainPreview `json:"drainPreview,omitempty"`
+
+	// Issues detected during drain execution.
 	// +optional
 	Issues []NodeIssue `json:"issues,omitempty"`
+
+	// True when adpoted+cordoned+drained are all satisfied. I should figure out if adpoted
+	// + drained, with cordon enabled=false is a valid state that should be considered ready for maintenance.
+	ReadyForMaintenance bool `json:"readyForMaintenance,omitempty"`
 }
 
 // NodeMaintenancePlanStatus defines observed state
@@ -195,6 +235,14 @@ type NodeMaintenancePlanStatus struct {
 	// +optional
 	LastPreviewTime *metav1.Time `json:"lastPreviewTime,omitempty"`
 
+	// Total evictable pods across all nodes at last preview.
+	// +optional
+	TotalEvictablePods int32 `json:"totalEvictablePods,omitempty"`
+
+	// Total number of preview issues detected across all nodes at last preview.
+	// +optional
+	TotalPreviewIssues int32 `json:"totalPreviewIssues,omitempty"`
+
 	// Last error message if preview or execution failed
 	// +optional
 	LastError string `json:"lastError,omitempty"`
@@ -202,6 +250,10 @@ type NodeMaintenancePlanStatus struct {
 	// ObservedGeneration reflects latest reconciled spec
 	// +optional
 	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
+
+	// True when all nodes have status readyForMaintenance = true
+	// +optional
+	AllNodesReadyForMaintenance bool `json:"allNodesReadyForMaintenance,omitempty"`
 }
 
 //
