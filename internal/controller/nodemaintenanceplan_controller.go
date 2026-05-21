@@ -56,6 +56,11 @@ const finalizerName = v1alpha1.NodeMaintenancePlanFinalizer
 // +kubebuilder:rbac:groups=maintenance.nmoo.io,resources=nodemaintenanceplans,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=maintenance.nmoo.io,resources=nodemaintenanceplans/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=maintenance.nmoo.io,resources=nodemaintenanceplans/finalizers,verbs=update
+// +kubebuilder:rbac:groups="",resources=nodes,verbs=get;list;watch;patch;update
+// +kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch
+// +kubebuilder:rbac:groups="",resources=pods/eviction,verbs=create
+// +kubebuilder:rbac:groups="",resources=events,verbs=create;patch
+// +kubebuilder:rbac:groups=policy,resources=poddisruptionbudgets,verbs=list
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.

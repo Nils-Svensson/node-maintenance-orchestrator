@@ -41,7 +41,7 @@ const namespace = "node-maintenance-orchestrator-system"
 const serviceAccountName = "node-maintenance-orchestrator-controller-manager"
 
 // metricsServiceName is the name of the metrics service of the project
-const metricsServiceName = "node-maintenance-orchestrator-controller-manager-metrics-service"
+const metricsServiceName = "node-maintenance-orchestrator-ctrl-manager-metrics-service"
 
 // metricsRoleBindingName is the name of the RBAC that will be created to allow get the metrics data
 const metricsRoleBindingName = "node-maintenance-orchestrator-metrics-binding"
