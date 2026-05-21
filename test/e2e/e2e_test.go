@@ -666,6 +666,83 @@ spec:
 			}).Should(Succeed())
 		})
 
+		It("should not steal ownership when two plans target overlapping node sets", func() {
+			sharedNode := workerNodes[0]
+			exclusiveNode := workerNodes[1]
+			planA := "e2e-conflict-a"
+			planB := "e2e-conflict-b"
+
+			By("creating plan A to own the shared node")
+			nmpAYAML := fmt.Sprintf(`
+apiVersion: maintenance.nmoo.io/v1alpha1
+kind: NodeMaintenancePlan
+metadata:
+  name: %s
+spec:
+  nodes:
+    - %s
+  reason: "conflict test plan A"
+`, planA, sharedNode)
+			cmd := exec.Command("kubectl", "apply", "-f", "-")
+			cmd.Stdin = strings.NewReader(nmpAYAML)
+			_, err := utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred())
+
+			By("waiting for plan A to adopt the shared node")
+			Eventually(func(g Gomega) {
+				cmd := exec.Command("kubectl", "get", "node", sharedNode,
+					"-o", `jsonpath={.metadata.annotations.maintenance\.nmoo\.io/managed-by}`)
+				output, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(output).To(Equal(planA))
+			}).Should(Succeed())
+
+			By("creating plan B targeting the shared node and an additional exclusive node")
+			nmpBYAML := fmt.Sprintf(`
+apiVersion: maintenance.nmoo.io/v1alpha1
+kind: NodeMaintenancePlan
+metadata:
+  name: %s
+spec:
+  nodes:
+    - %s
+    - %s
+  reason: "conflict test plan B"
+`, planB, sharedNode, exclusiveNode)
+			cmd = exec.Command("kubectl", "apply", "-f", "-")
+			cmd.Stdin = strings.NewReader(nmpBYAML)
+			_, err = utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred())
+
+			By("waiting for plan B to adopt its exclusive node")
+			Eventually(func(g Gomega) {
+				cmd := exec.Command("kubectl", "get", "node", exclusiveNode,
+					"-o", `jsonpath={.metadata.annotations.maintenance\.nmoo\.io/managed-by}`)
+				output, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(output).To(Equal(planB))
+			}).Should(Succeed())
+
+			By("verifying the shared node ownership is never transferred to plan B")
+			Consistently(func(g Gomega) {
+				cmd := exec.Command("kubectl", "get", "node", sharedNode,
+					"-o", `jsonpath={.metadata.annotations.maintenance\.nmoo\.io/managed-by}`)
+				output, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(output).To(Equal(planA))
+			}, 15*time.Second, 3*time.Second).Should(Succeed())
+
+			By("verifying an OwnershipConflict warning event was emitted for plan B")
+			Eventually(func(g Gomega) {
+				cmd := exec.Command("kubectl", "get", "events", "-A",
+					"--field-selector", fmt.Sprintf("reason=OwnershipConflict,involvedObject.name=%s", planB),
+					"-o", "name")
+				output, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(strings.TrimSpace(output)).NotTo(BeEmpty())
+			}).Should(Succeed())
+		})
+
 		It("should not adopt nodes added to the cluster after a nodeSelector-based plan is created", func() {
 			Expect(len(workerNodes)).To(BeNumerically(">=", 3),
 				"this test requires at least 3 worker nodes")

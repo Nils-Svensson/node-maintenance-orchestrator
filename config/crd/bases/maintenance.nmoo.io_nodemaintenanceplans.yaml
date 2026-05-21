@@ -179,6 +179,9 @@ spec:
                 || !has(self.drain.startAt) || self.cordon.startAt <= self.drain.startAt'
             - message: cannot set both nodes and nodeSelector
               rule: '!(has(self.nodes) && has(self.nodeSelector))'
+            - message: drain requires cordon to be enabled
+              rule: '!has(self.drain) || !self.drain.enabled || (has(self.cordon)
+                && self.cordon.enabled)'
           status:
             description: NodeMaintenancePlanStatus defines observed state
             properties:

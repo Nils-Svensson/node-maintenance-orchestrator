@@ -1,11 +1,11 @@
 apiVersion: maintenance.nmoo.io/v1alpha1
 kind: NodeMaintenancePlan
 metadata:
-  name: test
+  name: conflict
 spec:
   reason: "Planned maintenance"
-  nodes: [kind-worker3, kind-worker4]
+  nodes: [kind-worker3, kind-worker5]
   cordon:
-    enabled: false
-  drain: 
     enabled: true
+  drain: 
+    enabled: false

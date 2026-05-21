@@ -9,13 +9,12 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
+// Annotation key aliases — canonical definitions live in api/v1alpha1/annotations.go
+// so the webhook can reference them without importing the internal package.
 const (
-	ManagedByAnnotation = "maintenance.nmoo.io/managed-by"
-	ReasonAnnotation    = "maintenance.nmoo.io/reason"
-	// CordonedAnnotation is set on a node when the operator has cordoned it.
-	// Drift detection requires this marker so it can distinguish "never cordoned
-	// by the operator" from "operator cordoned it and someone manually undid that."
-	CordonedAnnotation = "maintenance.nmoo.io/cordoned"
+	ManagedByAnnotation = v1alpha1.ManagedByAnnotation
+	ReasonAnnotation    = v1alpha1.ReasonAnnotation
+	CordonedAnnotation  = v1alpha1.CordonedAnnotation
 )
 
 // OwnershipResolution is the result of diffing desired vs currently managed nodes.

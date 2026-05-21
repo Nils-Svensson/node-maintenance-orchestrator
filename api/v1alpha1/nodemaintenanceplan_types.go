@@ -105,6 +105,7 @@ type DrainSpec struct {
 // NodeMaintenancePlanSpec defines desired state
 // +kubebuilder:validation:XValidation:rule="!has(self.cordon) || !has(self.drain) || !has(self.cordon.startAt) || !has(self.drain.startAt) || self.cordon.startAt <= self.drain.startAt",message="cordon.startAt must be before or equal to drain.startAt"
 // +kubebuilder:validation:XValidation:rule="!(has(self.nodes) && has(self.nodeSelector))",message="cannot set both nodes and nodeSelector"
+// +kubebuilder:validation:XValidation:rule="!has(self.drain) || !self.drain.enabled || (has(self.cordon) && self.cordon.enabled)",message="drain requires cordon to be enabled"
 type NodeMaintenancePlanSpec struct {
 	// Explicit list of node names
 	// Mutually exclusive with NodeSelector
