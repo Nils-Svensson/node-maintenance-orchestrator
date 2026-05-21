@@ -107,6 +107,11 @@ type DrainSpec struct {
 // +kubebuilder:validation:XValidation:rule="!(has(self.nodes) && has(self.nodeSelector))",message="cannot set both nodes and nodeSelector"
 // +kubebuilder:validation:XValidation:rule="!has(self.drain) || !self.drain.enabled || (has(self.cordon) && self.cordon.enabled)",message="drain requires cordon to be enabled"
 type NodeMaintenancePlanSpec struct {
+	// TODO: The operator is currently "cooperative", in that it doesn't agressively enforce the plan spec against certain external actions (e.g. manual uncordon).
+	// Maybe add enforcementPolicy option to let users choose between "cooperative" and "authoritative" modes? 
+	// Authoritative mode would involve the operator reverting any manual changes that conflict with the plan spec.
+
+
 	// Explicit list of node names
 	// Mutually exclusive with NodeSelector
 	// +optional
