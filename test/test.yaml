@@ -1,7 +1,7 @@
 apiVersion: maintenance.nmoo.io/v1alpha1
 kind: NodeMaintenancePlan
 metadata:
-  name: cordon-workers
+  name: test
 spec:
   reason: "Planned maintenance"
   nodes: [kind-worker3, kind-worker4]
@@ -9,4 +9,3 @@ spec:
     enabled: true
   drain: 
     enabled: true
-    startAt: "2026-07-07T00:00:00Z"
