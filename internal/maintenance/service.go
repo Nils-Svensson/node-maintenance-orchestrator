@@ -15,9 +15,9 @@ type MaintenanceService struct {
 	clock    clock.Clock
 }
 
-func NewMaintenanceService(client client.Client, log logr.Logger, recorder record.EventRecorder, clk clock.Clock) *MaintenanceService {
+func NewMaintenanceService(c client.Client, log logr.Logger, recorder record.EventRecorder, clk clock.Clock) *MaintenanceService {
 	return &MaintenanceService{
-		client:   client,
+		client:   c,
 		log:      log.WithName("MaintenanceService"),
 		recorder: recorder,
 		clock:    clk,

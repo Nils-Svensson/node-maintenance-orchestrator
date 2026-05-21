@@ -105,10 +105,10 @@ func ComputeOwnership(desired map[string]*corev1.Node, managed map[string]*corev
 			owner = node.Annotations[ManagedByAnnotation]
 		}
 
-		switch {
-		case owner == "":
+		switch owner {
+		case "":
 			res.ToAdopt = append(res.ToAdopt, node)
-		case owner == planName:
+		case planName:
 			res.Stable = append(res.Stable, node)
 		default:
 			res.Conflicting = append(res.Conflicting, node)

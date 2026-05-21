@@ -60,7 +60,7 @@ patches:
 # - source: # Uncomment the following block to enable certificates for metrics
 #     kind: Service
 #     version: v1
-#     name: controller-manager-metrics-service
+#     name: ctrl-manager-metrics-service
 #     fieldPath: metadata.name
 #   targets:
 #     - select:
@@ -90,7 +90,7 @@ patches:
 # - source:
 #     kind: Service
 #     version: v1
-#     name: controller-manager-metrics-service
+#     name: ctrl-manager-metrics-service
 #     fieldPath: metadata.namespace
 #   targets:
 #     - select:
