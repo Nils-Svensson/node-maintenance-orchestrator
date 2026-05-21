@@ -219,6 +219,16 @@ type NodeStatus struct {
 
 // NodeMaintenancePlanStatus defines observed state
 type NodeMaintenancePlanStatus struct {
+	// ResolvedNodes holds the snapshot of node names selected when this plan uses
+	// NodeSelector. Populated on the first reconcile and never expanded thereafter,
+	// so nodes added to the cluster after plan creation are not automatically adopted.
+	// +optional
+	ResolvedNodes []string `json:"resolvedNodes,omitempty"`
+
+	// NodeSnapshotTaken is true once the NodeSelector snapshot has been taken.
+	// Distinguishes "snapshot taken and empty" from "snapshot not yet taken".
+	// +optional
+	NodeSnapshotTaken bool `json:"nodeSnapshotTaken,omitempty"`
 	// Conditions represent current state of the plan
 	// +optional
 	Conditions []metav1.Condition `json:"conditions,omitempty"`

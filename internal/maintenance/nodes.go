@@ -79,6 +79,24 @@ func (s *MaintenanceService) resolveExplicitNodes(ctx context.Context, plan *v1a
 	return result, nil
 }
 
+// resolveSnapshotNodes fetches nodes by name from a stored snapshot.
+// Nodes that no longer exist in the cluster are silently skipped so that
+// deleted nodes do not block reconciliation of the remaining plan nodes.
+func (s *MaintenanceService) resolveSnapshotNodes(ctx context.Context, names []string) (*NodeResolutionResult, error) {
+	result := &NodeResolutionResult{}
+	for _, name := range names {
+		var node corev1.Node
+		if err := s.client.Get(ctx, types.NamespacedName{Name: name}, &node); err != nil {
+			if apierrors.IsNotFound(err) {
+				continue
+			}
+			return nil, fmt.Errorf("getting node %q: %w", name, err)
+		}
+		result.Nodes = append(result.Nodes, node)
+	}
+	return result, nil
+}
+
 // resolveSelectorNodes retrieves nodes matching the provided label selector in the plan. It returns any issues encountered during resolution, such as an invalid selector or no matching nodes.
 func (s *MaintenanceService) resolveSelectorNodes(ctx context.Context, plan *v1alpha1.NodeMaintenancePlan) (*NodeResolutionResult, error) {
 

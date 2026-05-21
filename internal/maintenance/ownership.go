@@ -34,45 +34,69 @@ type OwnershipResolution struct {
 	Conflicting []*corev1.Node
 
 	All []*corev1.Node
+
+	// SnapshotNodes is non-nil only on the first reconcile of a NodeSelector-based
+	// plan. UpdateStatus uses it to persist the snapshot to status before the
+	// selector is re-evaluated on subsequent passes.
+	SnapshotNodes []string
 }
 
 // ComputeOwnershipResolution computes the ownership resolution for a given NodeMaintenancePlan
 // by comparing the desired nodes (resolved from the plan) with the currently managed nodes (annotated in the cluster).
 // It returns an OwnershipResolution that categorizes nodes into those to adopt, release, stable, or conflicting. Any errors encountered during resolution are returned for handling by the caller.
+//
+// For NodeSelector-based plans, the node set is frozen on the first reconcile
+// (stored in status.ResolvedNodes). Subsequent reconciles use the snapshot so
+// that nodes added to the cluster after plan creation are never auto-adopted.
 func (s *MaintenanceService) ComputeOwnershipResolution(ctx context.Context, plan *v1alpha1.NodeMaintenancePlan) (*OwnershipResolution, error) {
+	var result *NodeResolutionResult
+	var snapshotNodes []string // non-nil signals UpdateStatus to persist the snapshot
 
-	resolutionResult, err := s.ResolveNodes(ctx, plan)
-	if err != nil {
-		return nil, fmt.Errorf(
-			"resolving desired nodes: %w",
-			err,
-		)
+	switch {
+	case plan.Spec.NodeSelector != nil && plan.Status.NodeSnapshotTaken:
+		// Subsequent reconcile: use the frozen snapshot instead of re-evaluating the selector.
+		var err error
+		result, err = s.resolveSnapshotNodes(ctx, plan.Status.ResolvedNodes)
+		if err != nil {
+			return nil, fmt.Errorf("resolving snapshot nodes: %w", err)
+		}
+
+	case plan.Spec.NodeSelector != nil && !plan.Status.NodeSnapshotTaken:
+		// First reconcile: resolve the selector and freeze the result.
+		var err error
+		result, err = s.resolveSelectorNodes(ctx, plan)
+		if err != nil {
+			return nil, fmt.Errorf("resolving selector nodes: %w", err)
+		}
+		snapshotNodes = make([]string, 0, len(result.Nodes))
+		for i := range result.Nodes {
+			snapshotNodes = append(snapshotNodes, result.Nodes[i].Name)
+		}
+
+	default:
+		var err error
+		result, err = s.ResolveNodes(ctx, plan)
+		if err != nil {
+			return nil, fmt.Errorf("resolving desired nodes: %w", err)
+		}
 	}
 
 	desired := make(map[string]*corev1.Node)
-
-	if resolutionResult != nil {
-		for i := range resolutionResult.Nodes {
-
-			node := &resolutionResult.Nodes[i]
-
+	if result != nil {
+		for i := range result.Nodes {
+			node := &result.Nodes[i]
 			desired[node.Name] = node
 		}
 	}
 
 	managed, err := s.ResolveOwnedNodes(ctx, plan.Name)
 	if err != nil {
-		return nil, fmt.Errorf(
-			"resolving owned nodes: %w",
-			err,
-		)
+		return nil, fmt.Errorf("resolving owned nodes: %w", err)
 	}
 
-	return ComputeOwnership(
-		desired,
-		managed,
-		plan.Name,
-	), nil
+	res := ComputeOwnership(desired, managed, plan.Name)
+	res.SnapshotNodes = snapshotNodes
+	return res, nil
 }
 
 // ResolveOwnedNodes returns all cluster nodes annotated as managed by planName.

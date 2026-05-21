@@ -8,13 +8,15 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-// drainFilterResult categorises pods on a node into three buckets.
+// drainFilterResult categorises pods on a node into four buckets.
 // Evictable will be evicted. Blocked prevent drain from proceeding.
+// Terminating have already been evicted and are awaiting removal.
 // Skipped are intentionally left alone (mirror pods, DaemonSets, completed pods).
 type drainFilterResult struct {
-	Evictable []corev1.Pod
-	Blocked   []corev1.Pod
-	Skipped   []corev1.Pod
+	Evictable   []corev1.Pod
+	Blocked     []corev1.Pod
+	Terminating []corev1.Pod
+	Skipped     []corev1.Pod
 }
 
 // filterPodsForDrain lists all pods on the node and classifies them.
@@ -38,10 +40,10 @@ func classifyPods(pods []corev1.Pod, cfg *drainConfig) *drainFilterResult {
 			continue
 		}
 
-		// Always skip: already terminating pods. Eviction would be a no-op or error,
-		// and counting them as evictable would prevent drain from reaching completion.
+		// Already-terminating pods: eviction was issued previously. Count separately
+		// so drain does not report completion until the node is physically empty.
 		if pod.DeletionTimestamp != nil {
-			result.Skipped = append(result.Skipped, *pod)
+			result.Terminating = append(result.Terminating, *pod)
 			continue
 		}
 

@@ -73,8 +73,8 @@ func (s *MaintenanceService) applyDrainResults(ctx context.Context, plan *v1alph
 	for _, r := range results {
 		var blocked *drainBlockedError
 		switch {
-		case r.Err == nil && r.Outcome.Evicted == 0:
-			// Node is fully drained — nothing evictable found.
+		case r.Err == nil && r.Outcome.Evicted == 0 && r.Outcome.Terminating == 0:
+			// Node is fully drained — no evictable pods and all previous evictions have completed.
 			wasDraining := wasNodeDraining(original, r.NodeName)
 			updateNodeDrainStatus(plan, r.NodeName, r.Outcome, nil)
 			if wasDraining {
@@ -87,11 +87,18 @@ func (s *MaintenanceService) applyDrainResults(ctx context.Context, plan *v1alph
 			}
 
 		case r.Err == nil && r.Outcome.Evicted > 0:
-			// Evictions fired; pods are terminating.
+			// Evictions fired this pass; pods are entering Terminating state.
 			allDone = false
 			evictionsInFlight = true
 			updateNodeDrainStatus(plan, r.NodeName, r.Outcome, nil)
 			s.log.Info("evictions in progress", "node", r.NodeName, "evicted", r.Outcome.Evicted)
+
+		case r.Err == nil && r.Outcome.Terminating > 0:
+			// No new evictions needed; waiting for previously evicted pods to be removed.
+			allDone = false
+			evictionsInFlight = true
+			updateNodeDrainStatus(plan, r.NodeName, r.Outcome, nil)
+			s.log.V(1).Info("waiting for pods to terminate", "node", r.NodeName, "terminating", r.Outcome.Terminating)
 
 		case errors.As(r.Err, &blocked):
 			allDone = false

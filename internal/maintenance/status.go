@@ -56,6 +56,11 @@ func (s *MaintenanceService) UpdateStatus(ctx context.Context, plan *v1alpha1.No
 
 	plan.Status.Nodes = statuses
 
+	if res.SnapshotNodes != nil {
+		plan.Status.ResolvedNodes = res.SnapshotNodes
+		plan.Status.NodeSnapshotTaken = true
+	}
+
 	return s.client.Status().Patch(
 		ctx,
 		plan,

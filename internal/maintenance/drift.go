@@ -60,3 +60,5 @@ func GetNodeDriftState(plan *v1alpha1.NodeMaintenancePlan, nodeName string) (dri
 	}
 	return false, ""
 }
+
+//TODO: add logic for handling manual drain drift
