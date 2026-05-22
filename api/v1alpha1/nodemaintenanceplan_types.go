@@ -109,7 +109,7 @@ type DrainSpec struct {
 type NodeMaintenancePlanSpec struct {
 
 	// TODO: The operator is currently "cooperative", in that it doesn't aggressively enforce the plan spec against certain external actions (e.g. manual uncordon).
-	// Maybe add enforcementPolicy option to let users choose between "cooperative" and "authoritative" modes? 
+	// Maybe add enforcementPolicy option to let users choose between "cooperative" and "authoritative" modes?
 	// Authoritative mode would involve the operator reverting any manual changes that conflict with the plan spec.
 	//
 	// Explicit list of node names
