@@ -40,6 +40,7 @@ const (
 	ConditionDrainBlocked    = "DrainBlocked"
 	ConditionConflict        = "ConflictDetected"
 	ConditionDriftDetected   = "DriftDetected"
+	ConditionDrainTimedOut   = "DrainTimedOut"
 )
 
 //
@@ -75,10 +76,13 @@ type DrainOptions struct {
 	// +kubebuilder:default=false
 	Force bool `json:"force,omitempty"`
 
-	// Timeout for pod eviction (seconds)
+	// Overrides terminationGracePeriodSeconds for each evicted pod. When set,
+	// Kubernetes waits at most this many seconds for the pod to shut down
+	// gracefully before force-killing it. If unset, each pod's own
+	// terminationGracePeriodSeconds is used.
 	// +kubebuilder:validation:Minimum=0
 	// +optional
-	TimeoutSeconds int64 `json:"timeoutSeconds,omitempty"`
+	PodTerminationGracePeriodSeconds *int64 `json:"podTerminationGracePeriodSeconds,omitempty"`
 
 	// Whether to honour PodDisruptionBudgets during eviction. When false, pods
 	// blocked by a PDB are force-deleted via the Delete API instead of the
@@ -100,6 +104,13 @@ type DrainSpec struct {
 	// Drain options
 	// +optional
 	Options *DrainOptions `json:"options,omitempty"`
+
+	// Maximum number of minutes the drain phase may run. If all pods are not
+	// evicted and gone from the nodes by this deadline, the plan is marked
+	// DrainTimedOut and the operator stops retrying.
+	// +kubebuilder:validation:Minimum=1
+	// +optional
+	TimeoutMinutes *int32 `json:"timeoutMinutes,omitempty"`
 }
 
 // NodeMaintenancePlanSpec defines desired state
@@ -246,6 +257,11 @@ type NodeMaintenancePlanStatus struct {
 	// List of nodes with detected drift
 	// +optional
 	DriftedNodes []string `json:"driftedNodes,omitempty"`
+
+	// Time at which the drain phase first became active (DrainInProgress=True).
+	// Used to enforce drain.timeoutMinutes.
+	// +optional
+	DrainStartedAt *metav1.Time `json:"drainStartedAt,omitempty"`
 
 	// Last time preview was computed
 	// +optional

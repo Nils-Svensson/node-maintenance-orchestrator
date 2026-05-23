@@ -832,6 +832,187 @@ spec:
 			}
 		})
 
+		It("should mark DrainTimedOut when drain does not complete within timeoutMinutes", func() {
+			target := workerNodes[0]
+			nmpName := "e2e-drain-timeout"
+			deployName := "e2e-drain-timeout-workload"
+
+			DeferCleanup(func() {
+				// Force-delete so a 300s-grace pod does not slow down test cleanup.
+				cmd := exec.Command("kubectl", "delete", "pods", "-n", "default",
+					"-l", fmt.Sprintf("app=%s", deployName),
+					"--grace-period=0", "--force", "--ignore-not-found=true")
+				_, _ = utils.Run(cmd)
+				cmd = exec.Command("kubectl", "delete", "deployment", deployName, "-n", "default",
+					"--ignore-not-found=true", "--wait=false")
+				_, _ = utils.Run(cmd)
+			})
+
+			By("deploying a workload with a very long preStop hook that will outlast the timeout")
+			deployYAML := fmt.Sprintf(`
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: %s
+  namespace: default
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: %s
+  template:
+    metadata:
+      labels:
+        app: %s
+    spec:
+      terminationGracePeriodSeconds: 300
+      nodeSelector:
+        kubernetes.io/hostname: %s
+      containers:
+      - name: pause
+        image: registry.k8s.io/pause:3.9
+        lifecycle:
+          preStop:
+            sleep:
+              seconds: 240
+`, deployName, deployName, deployName, target)
+			cmd := exec.Command("kubectl", "apply", "-f", "-")
+			cmd.Stdin = strings.NewReader(deployYAML)
+			_, err := utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred())
+
+			By("waiting for workload pod to be Running on target node")
+			Eventually(waitForPodRunning(fmt.Sprintf("app=%s", deployName), target)).Should(Succeed())
+
+			By("creating NMP with a 1-minute drain timeout")
+			nmpYAML := fmt.Sprintf(`
+apiVersion: maintenance.nmoo.io/v1alpha1
+kind: NodeMaintenancePlan
+metadata:
+  name: %s
+spec:
+  nodes:
+    - %s
+  reason: "e2e drain timeout test"
+  cordon:
+    enabled: true
+  drain:
+    enabled: true
+    timeoutMinutes: 1
+`, nmpName, target)
+			cmd = exec.Command("kubectl", "apply", "-f", "-")
+			cmd.Stdin = strings.NewReader(nmpYAML)
+			_, err = utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred())
+
+			By("waiting for DrainTimedOut condition (allow extra time for cordon + eviction + 1m deadline)")
+			Eventually(nmpCondition(nmpName, "DrainTimedOut"), 3*time.Minute, 5*time.Second).Should(Succeed())
+
+			By("verifying DrainInProgress is False and DrainSucceeded is False")
+			cmd = exec.Command("kubectl", "get", "nmp", nmpName,
+				"-o", `jsonpath={.status.conditions[?(@.type=="DrainInProgress")].status}`)
+			output, err := utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(output).To(Equal("False"))
+
+			cmd = exec.Command("kubectl", "get", "nmp", nmpName,
+				"-o", `jsonpath={.status.conditions[?(@.type=="DrainSucceeded")].status}`)
+			output, err = utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(output).To(Equal("False"))
+
+			By("verifying the operator does not retry after timeout — DrainTimedOut stays True")
+			Consistently(func(g Gomega) {
+				cmd := exec.Command("kubectl", "get", "nmp", nmpName,
+					"-o", `jsonpath={.status.conditions[?(@.type=="DrainTimedOut")].status}`)
+				output, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(output).To(Equal("True"))
+			}, 15*time.Second, 3*time.Second).Should(Succeed())
+		})
+
+		It("should honour podTerminationGracePeriodSeconds by overriding the pod's own grace period", func() {
+			target := workerNodes[1]
+			nmpName := "e2e-grace-period"
+			deployName := "e2e-grace-period-workload"
+
+			DeferCleanup(func() {
+				cmd := exec.Command("kubectl", "delete", "deployment", deployName, "-n", "default",
+					"--ignore-not-found=true", "--wait=false")
+				_, _ = utils.Run(cmd)
+			})
+
+			By("deploying a workload whose preStop hook is far longer than the grace period override")
+			deployYAML := fmt.Sprintf(`
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: %s
+  namespace: default
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: %s
+  template:
+    metadata:
+      labels:
+        app: %s
+    spec:
+      terminationGracePeriodSeconds: 90
+      nodeSelector:
+        kubernetes.io/hostname: %s
+      containers:
+      - name: pause
+        image: registry.k8s.io/pause:3.9
+        lifecycle:
+          preStop:
+            sleep:
+              seconds: 60
+`, deployName, deployName, deployName, target)
+			cmd := exec.Command("kubectl", "apply", "-f", "-")
+			cmd.Stdin = strings.NewReader(deployYAML)
+			_, err := utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred())
+
+			By("waiting for workload pod to be Running on target node")
+			Eventually(waitForPodRunning(fmt.Sprintf("app=%s", deployName), target)).Should(Succeed())
+
+			By("creating NMP with a 5-second pod termination grace period override")
+			nmpYAML := fmt.Sprintf(`
+apiVersion: maintenance.nmoo.io/v1alpha1
+kind: NodeMaintenancePlan
+metadata:
+  name: %s
+spec:
+  nodes:
+    - %s
+  reason: "e2e grace period override test"
+  cordon:
+    enabled: true
+  drain:
+    enabled: true
+    options:
+      podTerminationGracePeriodSeconds: 5
+`, nmpName, target)
+			cmd = exec.Command("kubectl", "apply", "-f", "-")
+			cmd.Stdin = strings.NewReader(nmpYAML)
+			_, err = utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred())
+
+			By("verifying drain completes within 45s — faster than the 60s preStop would normally take, proving the override is applied")
+			Eventually(nmpCondition(nmpName, "DrainSucceeded"), 45*time.Second, 2*time.Second).Should(Succeed())
+
+			By("verifying no pods remain on the target node")
+			cmd = exec.Command("kubectl", "get", "pods", "-n", "default",
+				"-l", fmt.Sprintf("app=%s", deployName),
+				"--field-selector", fmt.Sprintf("spec.nodeName=%s", target),
+				"-o", "name")
+			output, err := utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(strings.TrimSpace(output)).To(BeEmpty())
+		})
+
 		It("should wait for pods to fully terminate before reporting drain complete", func() {
 			target := workerNodes[4]
 			nmpName := "e2e-slow-term"

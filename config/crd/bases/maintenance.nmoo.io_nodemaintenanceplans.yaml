@@ -96,6 +96,15 @@ spec:
                         description: Max number of nodes drained in parallel
                         format: int32
                         type: integer
+                      podTerminationGracePeriodSeconds:
+                        description: |-
+                          Overrides terminationGracePeriodSeconds for each evicted pod. When set,
+                          Kubernetes waits at most this many seconds for the pod to shut down
+                          gracefully before force-killing it. If unset, each pod's own
+                          terminationGracePeriodSeconds is used.
+                        format: int64
+                        minimum: 0
+                        type: integer
                       respectPodDisruptionBudgets:
                         default: true
                         description: |-
@@ -103,16 +112,19 @@ spec:
                           blocked by a PDB are force-deleted via the Delete API instead of the
                           Eviction API, bypassing budget checks entirely.
                         type: boolean
-                      timeoutSeconds:
-                        description: Timeout for pod eviction (seconds)
-                        format: int64
-                        minimum: 0
-                        type: integer
                     type: object
                   startAt:
                     description: Time at which drain should begin
                     format: date-time
                     type: string
+                  timeoutMinutes:
+                    description: |-
+                      Maximum number of minutes the drain phase may run. If all pods are not
+                      evicted and gone from the nodes by this deadline, the plan is marked
+                      DrainTimedOut and the operator stops retrying.
+                    format: int32
+                    minimum: 1
+                    type: integer
                 type: object
               nodeSelector:
                 description: |-
@@ -164,6 +176,9 @@ spec:
                 x-kubernetes-map-type: atomic
               nodes:
                 description: |-
+                  Maybe add enforcementPolicy option to let users choose between "cooperative" and "authoritative" modes?
+                  Authoritative mode would involve the operator reverting any manual changes that conflict with the plan spec.
+
                   Explicit list of node names
                   Mutually exclusive with NodeSelector
                 items:
@@ -246,6 +261,12 @@ spec:
                   - type
                   type: object
                 type: array
+              drainStartedAt:
+                description: |-
+                  Time at which the drain phase first became active (DrainInProgress=True).
+                  Used to enforce drain.timeoutMinutes.
+                format: date-time
+                type: string
               driftedNodes:
                 description: List of nodes with detected drift
                 items:

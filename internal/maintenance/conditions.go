@@ -17,3 +17,8 @@ func setCondition(plan *v1alpha1.NodeMaintenancePlan, condType string, status me
 		Message:            message,
 	})
 }
+
+func isConditionTrue(plan *v1alpha1.NodeMaintenancePlan, condType string) bool {
+	c := apimeta.FindStatusCondition(plan.Status.Conditions, condType)
+	return c != nil && c.Status == metav1.ConditionTrue
+}

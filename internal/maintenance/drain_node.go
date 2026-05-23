@@ -3,7 +3,6 @@ package maintenance
 import (
 	"context"
 	"fmt"
-	"time"
 
 	"github.com/Nils-Svensson/node-maintenance-orchestrator/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
@@ -16,11 +15,11 @@ import (
 // MaxParallel is intentionally excluded — it is a plan-level concurrency
 // concern handled by drain_reconcile.go, not a per-node execution concern.
 type drainConfig struct {
-	IgnoreDaemonSets            bool
-	DeleteEmptyDirData          bool
-	Force                       bool
-	TimeoutSeconds              int64
-	RespectPodDisruptionBudgets bool
+	IgnoreDaemonSets                 bool
+	DeleteEmptyDirData               bool
+	Force                            bool
+	PodTerminationGracePeriodSeconds *int64
+	RespectPodDisruptionBudgets      bool
 }
 
 // drainOutcome carries per-node counters back to ReconcileDrain so it can
@@ -67,20 +66,13 @@ func (s *MaintenanceService) drainNode(ctx context.Context, plan *v1alpha1.NodeM
 		return outcome, &drainBlockedError{node: node.Name, pods: result.Blocked}
 	}
 
-	nodeCtx := ctx
-	if cfg.TimeoutSeconds > 0 {
-		var cancel context.CancelFunc
-		nodeCtx, cancel = context.WithTimeout(ctx, time.Duration(cfg.TimeoutSeconds)*time.Second)
-		defer cancel()
-	}
-
 	for i := range result.Evictable {
 		pod := &result.Evictable[i]
-		if err := s.evictPod(nodeCtx, pod); err != nil {
+		if err := s.evictPod(ctx, pod, cfg.PodTerminationGracePeriodSeconds); err != nil {
 			if apierrors.IsTooManyRequests(err) {
 				if !cfg.RespectPodDisruptionBudgets {
 					// PDB checks bypassed — delete the pod directly.
-					if delErr := s.client.Delete(nodeCtx, pod); delErr != nil && !apierrors.IsNotFound(delErr) {
+					if delErr := s.client.Delete(ctx, pod); delErr != nil && !apierrors.IsNotFound(delErr) {
 						return outcome, fmt.Errorf("force-deleting PDB-blocked pod %s/%s: %w", pod.Namespace, pod.Name, delErr)
 					}
 					outcome.Evicted++
@@ -99,13 +91,19 @@ func (s *MaintenanceService) drainNode(ctx context.Context, plan *v1alpha1.NodeM
 	return outcome, nil
 }
 
-// evictPod sends an eviction request for a pod, honouring PodDisruptionBudgets.
-func (s *MaintenanceService) evictPod(ctx context.Context, pod *corev1.Pod) error {
+// evictPod sends an eviction request for a pod. If gracePeriodSeconds is non-nil
+// it overrides the pod's terminationGracePeriodSeconds.
+func (s *MaintenanceService) evictPod(ctx context.Context, pod *corev1.Pod, gracePeriodSeconds *int64) error {
 	eviction := &policyv1.Eviction{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      pod.Name,
 			Namespace: pod.Namespace,
 		},
+	}
+	if gracePeriodSeconds != nil {
+		eviction.DeleteOptions = &metav1.DeleteOptions{
+			GracePeriodSeconds: gracePeriodSeconds,
+		}
 	}
 	return s.client.SubResource("eviction").Create(ctx, pod, eviction)
 }
@@ -120,18 +118,15 @@ func getDrainConfig(plan *v1alpha1.NodeMaintenancePlan) *drainConfig {
 	if plan.Spec.Drain.Options == nil {
 		return &drainConfig{
 			IgnoreDaemonSets:            true, // matches CRD default
-			DeleteEmptyDirData:          false,
-			Force:                       false,
-			TimeoutSeconds:              0, // 0 = wait indefinitely
 			RespectPodDisruptionBudgets: true,
 		}
 	}
 	opts := plan.Spec.Drain.Options
 	return &drainConfig{
-		IgnoreDaemonSets:            opts.IgnoreDaemonSets,
-		DeleteEmptyDirData:          opts.DeleteEmptyDirData,
-		Force:                       opts.Force,
-		TimeoutSeconds:              opts.TimeoutSeconds,
-		RespectPodDisruptionBudgets: opts.RespectPodDisruptionBudgets,
+		IgnoreDaemonSets:                 opts.IgnoreDaemonSets,
+		DeleteEmptyDirData:               opts.DeleteEmptyDirData,
+		Force:                            opts.Force,
+		PodTerminationGracePeriodSeconds: opts.PodTerminationGracePeriodSeconds,
+		RespectPodDisruptionBudgets:      opts.RespectPodDisruptionBudgets,
 	}
 }

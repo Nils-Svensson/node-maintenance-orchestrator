@@ -40,6 +40,11 @@ func (s *MaintenanceService) ReconcileDrain(ctx context.Context, plan *v1alpha1.
 		return 0, nil
 	}
 
+	if isConditionTrue(plan, v1alpha1.ConditionDrainTimedOut) {
+		s.log.V(1).Info("drain timed out, skipping", "plan", plan.Name)
+		return 0, nil
+	}
+
 	maxParallel := 1
 	if plan.Spec.Drain.Options != nil && plan.Spec.Drain.Options.MaxParallel > 0 {
 		maxParallel = int(plan.Spec.Drain.Options.MaxParallel)
@@ -114,6 +119,31 @@ func (s *MaintenanceService) applyDrainResults(ctx context.Context, plan *v1alph
 			updateNodeDrainStatus(plan, r.NodeName, r.Outcome, nil)
 			s.log.Error(r.Err, "drain error", "node", r.NodeName)
 			s.recorder.Eventf(plan, "Warning", "DrainFailed", "node %q: %v", r.NodeName, r.Err)
+		}
+	}
+
+	// Record when drain first became active and enforce the plan-level timeout.
+	now := metav1.Now()
+	if !allDone {
+		if plan.Status.DrainStartedAt == nil {
+			plan.Status.DrainStartedAt = &now
+		}
+		if plan.Spec.Drain.TimeoutMinutes != nil {
+			deadline := plan.Status.DrainStartedAt.Add(time.Duration(*plan.Spec.Drain.TimeoutMinutes) * time.Minute)
+			if now.After(deadline) {
+				setCondition(plan, v1alpha1.ConditionDrainTimedOut, metav1.ConditionTrue,
+					"DeadlineExceeded", fmt.Sprintf("drain did not complete within %d minute(s)", *plan.Spec.Drain.TimeoutMinutes))
+				setCondition(plan, v1alpha1.ConditionDrainInProgress, metav1.ConditionFalse,
+					"TimedOut", "Drain stopped due to timeout")
+				setCondition(plan, v1alpha1.ConditionDrainSucceeded, metav1.ConditionFalse,
+					"TimedOut", "Drain timed out before completion")
+				s.recorder.Eventf(plan, corev1.EventTypeWarning, "DrainTimedOut",
+					"drain deadline of %d minute(s) exceeded", *plan.Spec.Drain.TimeoutMinutes)
+				if err := s.client.Status().Patch(ctx, plan, client.MergeFrom(original)); err != nil {
+					return 0, fmt.Errorf("patching drain timeout status: %w", err)
+				}
+				return 0, nil
+			}
 		}
 	}
 
