@@ -74,11 +74,12 @@ jobs:
         run: |
           CHART_VERSION="${{ github.ref_name }}"
           CHART_VERSION="${CHART_VERSION#v}"
+          REPO_OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
           helm registry login ghcr.io \
             --username "${{ github.actor }}" \
             --password "${{ secrets.GITHUB_TOKEN }}"
           helm push "dist/node-maintenance-orchestrator-${CHART_VERSION}.tgz" \
-            oci://ghcr.io/${{ github.repository_owner }}/charts
+            oci://ghcr.io/${REPO_OWNER}/charts
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
