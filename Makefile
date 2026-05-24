@@ -140,8 +140,14 @@ docker-buildx: ## Build and push docker image for the manager for cross-platform
 	- $(CONTAINER_TOOL) buildx rm node-maintenance-orchestrator-builder
 	rm Dockerfile.cross
 
+CHART_DIR = charts/node-maintenance-orchestrator
+
+.PHONY: helm-sync-crds
+helm-sync-crds: manifests ## Sync generated CRDs into the Helm chart's crds/ directory.
+	cp config/crd/bases/*.yaml $(CHART_DIR)/crds/
+
 .PHONY: build-installer
-build-installer: manifests generate kustomize ## Generate a consolidated YAML with CRDs and deployment.
+build-installer: manifests generate kustomize helm-sync-crds ## Generate a consolidated YAML with CRDs and deployment.
 	mkdir -p dist
 	cd config/manager && "$(KUSTOMIZE)" edit set image controller=${IMG}
 	"$(KUSTOMIZE)" build config/default > dist/install.yaml

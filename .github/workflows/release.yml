@@ -53,13 +53,35 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
 
+      - name: Setup Helm
+        uses: azure/setup-helm@v4
+
       - name: Build install manifest
         run: |
           IMG=$(echo "ghcr.io/${{ github.repository }}:${{ github.ref_name }}" | tr '[:upper:]' '[:lower:]') \
             make build-installer
 
+      - name: Package Helm chart
+        run: |
+          CHART_VERSION="${{ github.ref_name }#v}"
+          helm package charts/node-maintenance-orchestrator \
+            --version "${CHART_VERSION}" \
+            --app-version "${{ github.ref_name }}" \
+            --destination dist/
+
+      - name: Push Helm chart to ghcr.io
+        run: |
+          CHART_VERSION="${{ github.ref_name }#v}"
+          helm registry login ghcr.io \
+            --username "${{ github.actor }}" \
+            --password "${{ secrets.GITHUB_TOKEN }}"
+          helm push "dist/node-maintenance-orchestrator-${CHART_VERSION}.tgz" \
+            oci://ghcr.io/${{ github.repository_owner }}/charts
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/install.yaml
+          files: |
+            dist/install.yaml
+            dist/node-maintenance-orchestrator-*.tgz
           generate_release_notes: true

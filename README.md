@@ -1,135 +1,201 @@
 # node-maintenance-orchestrator
-// TODO(user): Add simple overview of use/purpose
 
-## Description
-// TODO(user): An in-depth paragraph about your project and overview of use
+A Kubernetes operator for automating node maintenance preparation. Declare which nodes need maintenance and when — the operator handles cordoning, draining, PDB-aware eviction, and progress tracking.
 
-## Getting Started
+## Overview
 
-### Prerequisites
-- go version v1.24.6+
-- docker version 17.03+.
-- kubectl version v1.11.3+.
-- Access to a Kubernetes v1.11.3+ cluster.
+Before taking a node offline for maintenance (hardware repairs, OS upgrades, kernel patches), you need to cordon it to block new scheduling and drain it by evicting all existing pods. `kubectl drain` works for one-off operations, but becomes cumbersome when:
 
-### To Deploy on the cluster
-**Build and push your image to the location specified by `IMG`:**
+- Coordinating maintenance across multiple nodes with a controlled rollout
+- Respecting PodDisruptionBudgets across a fleet without manual intervention
+- Scheduling maintenance windows in advance
+- Tracking which nodes are ready and which are blocked
 
-```sh
-make docker-build docker-push IMG=<some-registry>/node-maintenance-orchestrator:tag
-```
+`node-maintenance-orchestrator` lets you express this as a `NodeMaintenancePlan` resource. The operator drives cordon and drain to completion, reports per-node progress and blockers, and marks each node ready for maintenance once its workloads are gone.
 
-**NOTE:** This image ought to be published in the personal registry you specified.
-And it is required to have access to pull the image from the working environment.
-Make sure you have the proper permission to the registry if the above commands don’t work.
+### Key features
 
-**Install the CRDs into the cluster:**
+- **Scheduled maintenance windows** — set when cordon and drain begin; the operator handles timing and retries
+- **Multi-node rollout control** — drain nodes one at a time or in parallel, with configurable concurrency
+- **PDB-aware eviction** — respects PodDisruptionBudgets by default; configurable bypass per plan
+- **Pre-drain preview** — dry-run analysis surfaces blocked pods and potential issues before evictions begin
+- **Per-node progress tracking** — drain progress percentage, blocked pod details, and status conditions per node
+- **Drain timeout** — declare a deadline; the plan stops retrying and is marked `DrainTimedOut` if drain does not complete in time
+- **Point-in-time node selection** — label-based plans snapshot the matching node set at creation; new nodes matching the selector later are not automatically adopted
+- **Safe concurrent plans** — two plans cannot manage the same node; conflicts are detected and reported
 
-```sh
-make install
-```
+## Install
 
-**Deploy the Manager to the cluster with the image specified by `IMG`:**
+### Helm (recommended)
 
 ```sh
-make deploy IMG=<some-registry>/node-maintenance-orchestrator:tag
+helm install nmo oci://ghcr.io/nils-svensson/charts/node-maintenance-orchestrator \
+  --version <version> \
+  --namespace nmo-system \
+  --create-namespace
 ```
 
-> **NOTE**: If you encounter RBAC errors, you may need to grant yourself cluster-admin
-privileges or be logged in as admin.
-
-**Create instances of your solution**
-You can apply the samples (examples) from the config/sample:
+To list available versions:
 
 ```sh
-kubectl apply -k config/samples/
+helm search repo oci://ghcr.io/nils-svensson/charts/node-maintenance-orchestrator
 ```
 
->**NOTE**: Ensure that the samples has default values to test it out.
+### kubectl
 
-### To Uninstall
-**Delete the instances (CRs) from the cluster:**
+Apply the single-file manifest from a release:
 
 ```sh
-kubectl delete -k config/samples/
+kubectl apply -f https://github.com/Nils-Svensson/node-maintenance-orchestrator/releases/download/<version>/install.yaml
 ```
 
-**Delete the APIs(CRDs) from the cluster:**
+### Kustomize
+
+Reference the `config/default` base directly in your own `kustomization.yaml`:
+
+```yaml
+resources:
+  - https://github.com/Nils-Svensson/node-maintenance-orchestrator/config/default?ref=<version>
+
+images:
+  - name: controller
+    newName: ghcr.io/nils-svensson/node-maintenance-orchestrator
+    newTag: <version>
+```
+
+## Quick start
+
+### Cordon and drain two nodes at a scheduled time
+
+```yaml
+apiVersion: maintenance.nmoo.io/v1alpha1
+kind: NodeMaintenancePlan
+metadata:
+  name: worker-maintenance
+spec:
+  nodes:
+    - worker-1
+    - worker-2
+  reason: "scheduled kernel upgrade"
+  cordon:
+    enabled: true
+    startAt: "2026-06-01T02:00:00Z"
+  drain:
+    enabled: true
+    timeoutMinutes: 30
+    options:
+      podTerminationGracePeriodSeconds: 30
+```
+
+When `drain.startAt` is omitted, drain begins as soon as the nodes are cordoned — there is no separate drain delay. Set `drain.startAt` only if you want a deliberate gap between cordon and drain (for example, to let load balancers shed connections before pods are evicted).
+
+Check progress:
 
 ```sh
-make uninstall
+kubectl get nmp worker-maintenance
+kubectl describe nmp worker-maintenance
 ```
 
-**UnDeploy the controller from the cluster:**
+### Select nodes by label
 
-```sh
-make undeploy
+```yaml
+spec:
+  nodeSelector:
+    matchLabels:
+      node-role: compute
+  cordon:
+    enabled: true
+  drain:
+    enabled: true
 ```
 
-## Project Distribution
+Nodes matching the selector are snapshotted when the plan is created. Nodes added to the cluster afterward — even if they match the selector — are not adopted.
 
-Following the options to release and provide this solution to the users.
+## Lifecycle and behavior
 
-### By providing a bundle with all YAML files
+### Plan deletion
 
-1. Build the installer for the image built and published in the registry:
+When a `NodeMaintenancePlan` is deleted, the operator's finalizer runs before the object is removed. Every node the plan owns is uncordoned (if the operator applied the cordon) and the `maintenance.nmoo.io/managed-by` annotation is removed. The cluster is left in a clean state regardless of how far through the drain process the plan had progressed.
 
-```sh
-make build-installer IMG=<some-registry>/node-maintenance-orchestrator:tag
-```
+### Removing a node from the plan spec
 
-**NOTE:** The makefile target mentioned above generates an 'install.yaml'
-file in the dist directory. This file contains all the resources built
-with Kustomize, which are necessary to install this project without its
-dependencies.
+If you remove a node name from `spec.nodes`, the operator detects the change on the next reconcile and releases that node: it is uncordoned and its annotations are removed. The remaining nodes in the plan are unaffected.
 
-2. Using the installer
+### Manual uncordon
 
-Users can just run 'kubectl apply -f <URL for YAML BUNDLE>' to install
-the project, i.e.:
+If you manually `kubectl uncordon` a node that the operator cordoned, the operator detects the mismatch as drift and **releases ownership of that node**. It will not re-cordon it. A `DriftDetected` warning event is fired on the plan. The operator is intentionally cooperative here - it assumes the external actor has a reason for uncordoning and does not fight it. To resume management of that node, remove it from the plan spec and re-add it. In the case of using nodeSelector, delete and re-create plan to clear drift.  
 
-```sh
-kubectl apply -f https://raw.githubusercontent.com/<org>/node-maintenance-orchestrator/<tag or branch>/dist/install.yaml
-```
+### External cordon
 
-### By providing a Helm Chart
+If a node managed by a plan with `cordon.enabled: false` becomes unschedulable due to an external actor (a cluster autoscaler, another operator, or a manual `kubectl cordon`), the operator records this as drift but **retains ownership and does not interfere**. A `DriftDetected` event is fired. The operator is intentionally cooperative here — it assumes the external actor has a reason for the cordon and does not fight it.
 
-1. Build the chart using the optional helm plugin
+### Valid plan configurations
 
-```sh
-kubebuilder edit --plugins=helm/v2-alpha
-```
+| `cordon.enabled` | `drain.enabled` | Valid | Behavior |
+|-----------------|----------------|-------|----------|
+| `false` | `false` | ✓ | Nodes are adopted and tracked but no action is taken. Useful for observing the plan before enabling maintenance actions. |
+| `true` | `false` | ✓ | Nodes are cordoned only. Useful when you want to block new scheduling but manage pod eviction yourself. |
+| `true` | `true` | ✓ | Full maintenance preparation: nodes are cordoned, then drained. |
+| `false` | `true` | ✗ | Rejected at admission — drain requires cordon to be enabled. |
 
-2. See that a chart was generated under 'dist/chart', and users
-can obtain this solution from there.
+## Configuration reference
 
-**NOTE:** If you change the project, you need to update the Helm Chart
-using the same command above to sync the latest changes. Furthermore,
-if you create webhooks, you need to use the above command with
-the '--force' flag and manually ensure that any custom configuration
-previously added to 'dist/chart/values.yaml' or 'dist/chart/manager/manager.yaml'
-is manually re-applied afterwards.
+### `spec.nodes` / `spec.nodeSelector`
+
+Mutually exclusive. `nodes` is an explicit list of node names; `nodeSelector` is a label selector. When using `nodeSelector`, the resolved node set is frozen on the first reconcile.
+
+### `spec.cordon`
+
+| Field | Default | Description |
+|-------|---------|-------------|
+| `enabled` | `false` | Cordon the selected nodes |
+| `startAt` | — | RFC 3339 time at which cordon begins. Omit to cordon immediately. |
+
+### `spec.drain`
+
+Drain requires `cordon.enabled: true`.
+
+| Field | Default | Description |
+|-------|---------|-------------|
+| `enabled` | `false` | Drain the selected nodes after cordoning |
+| `startAt` | — | RFC 3339 time at which drain begins |
+| `timeoutMinutes` | none (infinite) | Mark the plan `DrainTimedOut` if drain does not complete within this many minutes |
+
+### `spec.drain.options`
+
+All fields are optional. The defaults produce behavior equivalent to `kubectl drain --ignore-daemonsets`: DaemonSet pods are skipped, PodDisruptionBudgets are respected, and pods without a controller or with emptyDir volumes block drain unless explicitly allowed.
+
+| Field | Default | Description |
+|-------|---------|-------------|
+| `maxParallel` | `1` | Number of nodes drained concurrently |
+| `ignoreDaemonSets` | `true` | Skip DaemonSet-managed pods instead of blocking |
+| `deleteEmptyDirData` | `false` | Allow eviction of pods with emptyDir volumes (data will be lost) |
+| `force` | `false` | Allow eviction of pods with no owning controller (they will not be rescheduled) |
+| `podTerminationGracePeriodSeconds` | — | Override each pod's own `terminationGracePeriodSeconds`. Omit to use each pod's configured value. Set to `0` to force-kill immediately. |
+| `respectPodDisruptionBudgets` | `true` | When `false`, pods blocked by a PDB are force-deleted via the Delete API instead of the Eviction API |
+
+### Status conditions
+
+| Condition | Meaning |
+|-----------|---------|
+| `NodesSelected` | At least one node has been adopted |
+| `Cordoned` | All managed nodes are cordoned |
+| `DrainInProgress` | Evictions are in flight |
+| `DrainSucceeded` | All managed nodes are empty |
+| `DrainBlocked` | One or more pods cannot be evicted |
+| `DrainTimedOut` | Drain did not complete within `timeoutMinutes` |
+| `ConflictDetected` | A node is already owned by another plan |
+| `DriftDetected` | A managed node was modified outside this plan |
+
+## Prerequisites
+
+- Kubernetes v1.30.0+
+- kubectl v1.30.0+
 
 ## Contributing
-// TODO(user): Add detailed information on how you would like others to contribute to this project
 
-**NOTE:** Run `make help` for more information on all potential `make` targets
-
-More information can be found via the [Kubebuilder Documentation](https://book.kubebuilder.io/introduction.html)
+Issues and pull requests are welcome. Please open an issue before starting significant work so we can discuss the approach.
 
 ## License
 
-Copyright 2026.
-
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
-
+Copyright 2026. Licensed under the [Apache License, Version 2.0](LICENSE).

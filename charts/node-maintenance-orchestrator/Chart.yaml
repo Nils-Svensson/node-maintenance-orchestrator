@@ -1,0 +1,18 @@
+apiVersion: v2
+name: node-maintenance-orchestrator
+description: Kubernetes operator for scheduling and orchestrating node maintenance (cordon, drain, PDB-aware eviction)
+type: application
+# Overridden by the release workflow: helm package --version X --app-version vX
+version: 0.0.0
+appVersion: "0.0.0"
+keywords:
+  - kubernetes
+  - operator
+  - node-maintenance
+  - drain
+home: https://github.com/Nils-Svensson/node-maintenance-orchestrator
+sources:
+  - https://github.com/Nils-Svensson/node-maintenance-orchestrator
+maintainers:
+  - name: Nils Svensson
+    url: https://github.com/Nils-Svensson
