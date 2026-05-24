@@ -63,7 +63,8 @@ jobs:
 
       - name: Package Helm chart
         run: |
-          CHART_VERSION="${{ github.ref_name }#v}"
+          CHART_VERSION="${{ github.ref_name }}"
+          CHART_VERSION="${CHART_VERSION#v}"
           helm package charts/node-maintenance-orchestrator \
             --version "${CHART_VERSION}" \
             --app-version "${{ github.ref_name }}" \
@@ -71,7 +72,8 @@ jobs:
 
       - name: Push Helm chart to ghcr.io
         run: |
-          CHART_VERSION="${{ github.ref_name }#v}"
+          CHART_VERSION="${{ github.ref_name }}"
+          CHART_VERSION="${CHART_VERSION#v}"
           helm registry login ghcr.io \
             --username "${{ github.actor }}" \
             --password "${{ secrets.GITHUB_TOKEN }}"
