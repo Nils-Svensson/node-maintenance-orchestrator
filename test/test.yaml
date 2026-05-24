@@ -6,6 +6,6 @@ spec:
   reason: "Planned maintenance"
   nodes: [kind-worker3, kind-worker4]
   cordon:
-    enabled: false
+    enabled: true
   drain: 
     enabled: true

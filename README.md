@@ -87,7 +87,7 @@ spec:
       podTerminationGracePeriodSeconds: 30
 ```
 
-When `drain.startAt` is omitted, drain begins as soon as the nodes are cordoned — there is no separate drain delay. Set `drain.startAt` only if you want a deliberate gap between cordon and drain (for example, to let load balancers shed connections before pods are evicted).
+When `drain.startAt` is omitted, drain begins as soon as the nodes are cordoned — there is no separate drain delay. Set `drain.startAt` only if you want a deliberate gap between cordon and drain (for example, to allow external health-check-based load balancers time to remove the node from their backend pool before pods start terminating).
 
 Check progress:
 
@@ -170,7 +170,7 @@ Repeat for each node as it completes. The cordon persists across reboots because
 
 ### 4. Delete the plan
 
-Once you have returned all nodes to service:
+Once you are done with maintenance, delete the plan:
 
 ```sh
 kubectl delete nmp worker-upgrade
@@ -178,7 +178,7 @@ kubectl delete nmp worker-upgrade
 
 The finalizer runs and releases any remaining owned nodes (annotations removed, cordons lifted). If all nodes were already released individually in step 3, the finalizer is a no-op and deletion is immediate.
 
-> For a single-node plan there is no need to uncordon manually first — just delete the plan and the finalizer handles everything.
+> Uncordoning nodes one at a time as they complete (step 3) is optional — it is only useful when you want to return individual nodes to service before the others are done. If you prefer to complete all maintenance first and return nodes to service in one go, skip step 3 entirely and go straight to deleting the plan.
 
 ## Lifecycle and behavior
 
@@ -285,6 +285,8 @@ Events are emitted on the `NodeMaintenancePlan` object and visible via `kubectl 
 ## Contributing
 
 Issues and pull requests are welcome. Please open an issue before starting significant work so we can discuss the approach.
+
+This project follows the API conventions and controller development best practices described in the Kubernetes community documentation. Please familiarize yourself with those guidelines before submitting a pull request.
 
 ## License
 
