@@ -150,7 +150,7 @@ func (s *MaintenanceService) applyDrainResults(ctx context.Context, plan *v1alph
 	// Set conditions reflecting the aggregate drain state.
 	if allDone {
 		setCondition(plan, v1alpha1.ConditionDrainSucceeded, metav1.ConditionTrue,
-			"AllPodsEvicted", "All target pods have been evicted")
+			"AllPodsEvicted", "All target pods have been evicted and removed from the nodes")
 		setCondition(plan, v1alpha1.ConditionDrainInProgress, metav1.ConditionFalse,
 			"Idle", "Drain is not in progress")
 		setCondition(plan, v1alpha1.ConditionDrainBlocked, metav1.ConditionFalse,

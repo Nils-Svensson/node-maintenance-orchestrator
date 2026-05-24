@@ -1,4 +1,4 @@
-# node-maintenance-orchestrator
+# Node-Maintenance-Orchestrator
 
 A Kubernetes operator for automating node maintenance preparation. Declare which nodes need maintenance and when — the operator handles cordoning, draining, PDB-aware eviction, and progress tracking.
 
@@ -111,6 +111,75 @@ spec:
 
 Nodes matching the selector are snapshotted when the plan is created. Nodes added to the cluster afterward — even if they match the selector — are not adopted.
 
+## Workflow walkthrough
+
+A complete maintenance cycle for three nodes: all cordoned at the same time, drained two at a time, returned to service individually as each completes.
+
+### 1. Create the plan
+
+```yaml
+apiVersion: maintenance.nmoo.io/v1alpha1
+kind: NodeMaintenancePlan
+metadata:
+  name: worker-upgrade
+spec:
+  nodes:
+    - worker-1
+    - worker-2
+    - worker-3
+  reason: "kernel 6.8 upgrade"
+  cordon:
+    enabled: true
+    startAt: "2026-06-01T02:00:00Z"
+  drain:
+    enabled: true
+    startAt: "2026-06-01T02:15:00Z"
+    timeoutMinutes: 60
+    options:
+      maxParallel: 2
+      podTerminationGracePeriodSeconds: 60
+```
+
+The operator immediately adopts all three nodes. Cordon fires at 02:00 — the 15-minute gap gives load balancers time to shed connections before pods are evicted. Drain starts at 02:15, processing two nodes at a time.
+
+### 2. Monitor progress
+
+```sh
+kubectl get nmp worker-upgrade -w
+```
+
+At 02:00 all three nodes are cordoned (`Cordoned=True`). At 02:15 drain begins on worker-1 and worker-2 in parallel (`DrainInProgress=True`). For per-node detail — drain progress, blocked pods, warning events:
+
+```sh
+kubectl describe nmp worker-upgrade
+```
+
+### 3. Return nodes to service as they complete
+
+Nodes finish draining at different times depending on their workload. As soon as worker-1 finishes draining and reaches `ReadyForMaintenance=true`, the drain slot it held is freed and drain starts on worker-3 immediately — no uncordon required.
+
+When a node reaches `ReadyForMaintenance=true`, perform the physical maintenance (reboot, firmware update, etc.), then uncordon it:
+
+```sh
+kubectl uncordon worker-1
+```
+
+The operator detects the uncordon, sees that `ReadyForMaintenance=true` for worker-1, emits a `MaintenanceComplete` Normal event, and releases ownership — removing the `managed-by` annotation. No `DriftDetected` warning is raised.
+
+Repeat for each node as it completes. The cordon persists across reboots because it is stored in the node spec in etcd, not in memory on the node — so the node comes back unschedulable after a reboot and needs an explicit uncordon.
+
+### 4. Delete the plan
+
+Once you have returned all nodes to service:
+
+```sh
+kubectl delete nmp worker-upgrade
+```
+
+The finalizer runs and releases any remaining owned nodes (annotations removed, cordons lifted). If all nodes were already released individually in step 3, the finalizer is a no-op and deletion is immediate.
+
+> For a single-node plan there is no need to uncordon manually first — just delete the plan and the finalizer handles everything.
+
 ## Lifecycle and behavior
 
 ### Plan deletion
@@ -180,17 +249,38 @@ All fields are optional. The defaults produce behavior equivalent to `kubectl dr
 |-----------|---------|
 | `NodesSelected` | At least one node has been adopted |
 | `Cordoned` | All managed nodes are cordoned |
-| `DrainInProgress` | Evictions are in flight |
-| `DrainSucceeded` | All managed nodes are empty |
+| `DrainInProgress` | Evictions are in flight or pods are terminating |
+| `DrainSucceeded` | All managed nodes are empty — pods evicted and physically removed |
 | `DrainBlocked` | One or more pods cannot be evicted |
 | `DrainTimedOut` | Drain did not complete within `timeoutMinutes` |
 | `ConflictDetected` | A node is already owned by another plan |
 | `DriftDetected` | A managed node was modified outside this plan |
 
+### Events
+
+Events are emitted on the `NodeMaintenancePlan` object and visible via `kubectl describe nmp <name>`.
+
+| Reason | Type | Description |
+|--------|------|-------------|
+| `NodeAdopted` | Normal | Node brought under management by this plan |
+| `NodeCordoned` | Normal | Node marked unschedulable |
+| `NodeUncordoned` | Normal | Node returned to schedulable (cordon disabled or plan deleted) |
+| `NodeReleased` | Normal | Node removed from management; annotations cleared |
+| `NodeDrained` | Normal | Node has no remaining evictable pods |
+| `NodeReadyForMaintenance` | Normal | Node is cordoned and fully drained |
+| `AllNodesReadyForMaintenance` | Normal | All nodes in the plan are ready for maintenance |
+| `OwnershipConflict` | Warning | Node is already managed by another plan; this plan will not manage it |
+| `DriftDetected` | Warning | Node state diverged from the plan (see [Manual uncordon](#manual-uncordon) and [External cordon](#external-cordon)) |
+| `DrainBlocked` | Warning | Pod eviction rejected by a PodDisruptionBudget or blocked by plan configuration |
+| `DrainFailed` | Warning | Unexpected error during eviction |
+| `DrainTimedOut` | Warning | Drain deadline exceeded |
+
 ## Prerequisites
 
-- Kubernetes v1.30.0+
-- kubectl v1.30.0+
+- Kubernetes v1.29.0+ (CEL validation rules in the CRD require 1.25+ beta / 1.29+ stable)
+- kubectl v1.29.0+
+
+> The operator is tested against Kubernetes v1.35+. It likely works on v1.25+ but this is not verified.
 
 ## Contributing
 

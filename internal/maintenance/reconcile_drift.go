@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/Nils-Svensson/node-maintenance-orchestrator/api/v1alpha1"
+	corev1 "k8s.io/api/core/v1"
 )
 
 // ReconcileDrift releases ownership of any stable node that has drifted from the desired state.
@@ -26,11 +27,24 @@ func (s *MaintenanceService) ReconcileDrift(ctx context.Context, plan *v1alpha1.
 		}
 
 		switch reason {
+		case DriftReasonMaintenanceComplete:
+			s.log.Info("node uncordoned after maintenance, releasing ownership", "node", node.Name)
+			s.recorder.Eventf(
+				plan,
+				corev1.EventTypeNormal,
+				"MaintenanceComplete",
+				"node %q returned to service after maintenance: ownership released",
+				node.Name,
+			)
+			if err := s.ReleaseNode(ctx, node, plan); err != nil {
+				return fmt.Errorf("releasing maintenance-complete node %q: %w", node.Name, err)
+			}
+
 		case DriftReasonManualUncordon:
 			s.log.Info("node drifted, releasing ownership", "node", node.Name, "reason", reason)
 			s.recorder.Eventf(
 				plan,
-				"Warning",
+				corev1.EventTypeWarning,
 				"DriftDetected",
 				"node %q drifted (%s): ownership released. Remove and re-add the node to the plan spec to resume management.",
 				node.Name,
@@ -44,7 +58,7 @@ func (s *MaintenanceService) ReconcileDrift(ctx context.Context, plan *v1alpha1.
 			s.log.Info("node externally cordoned while cordon is disabled, skipping", "node", node.Name)
 			s.recorder.Eventf(
 				plan,
-				"Warning",
+				corev1.EventTypeWarning,
 				"DriftDetected",
 				"node %q drifted (%s): externally cordoned while cordon is disabled, operator will not interfere",
 				node.Name,

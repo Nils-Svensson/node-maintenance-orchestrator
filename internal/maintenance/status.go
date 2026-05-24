@@ -41,6 +41,13 @@ func (s *MaintenanceService) UpdateStatus(ctx context.Context, plan *v1alpha1.No
 			drifted, reason = GetNodeDriftState(plan, node.Name)
 		}
 
+		// MaintenanceComplete is an expected lifecycle transition, not a drift
+		// condition. Don't persist it as Drifted in status.
+		if reason == DriftReasonMaintenanceComplete {
+			drifted = false
+			reason = ""
+		}
+
 		// Start from the previous entry so drain counters are preserved, then
 		// overwrite only the fields this function is responsible for.
 		ns := existing[node.Name]

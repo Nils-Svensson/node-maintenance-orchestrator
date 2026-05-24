@@ -18,13 +18,32 @@ const (
 	// over ~10 minutes, so it won't spam badly, but it's worth noting for later.
 	// TODO: fix the above issue.
 	DriftReasonExternalCordon = "ExternalCordon"
+
+	// DriftReasonMaintenanceComplete is returned when a node that has already reached
+	// ReadyForMaintenance=true is uncordoned. This is the expected final step of the
+	// maintenance workflow (user uncordons the node to return it to service) and is
+	// not a drift situation. A MaintenanceComplete Normal event is emitted instead of
+	// a DriftDetected warning, and ownership is released cleanly.
+	DriftReasonMaintenanceComplete = "MaintenanceComplete"
+
+	// TODO: DriftReasonExternalDrain — detect when a managed node's pods were evicted
+	// by an external actor rather than the operator. Currently not implemented because
+	// it is not detectable from pod state alone (we cannot distinguish "operator evicted"
+	// from "external eviction"), and the operator already handles this transparently:
+	// filterPodsForDrain finds no pods, applyDrainResults marks the node complete.
+	// A future approach could track per-pod eviction ownership via annotations.
 )
 
 // DetectNodeDrift returns true when a stable node (owned, in desired set) has
-// drifted from the expected cordon state. Two cases are detected:
+// drifted from the expected cordon state. Three cases are detected:
+//
+//   - MaintenanceComplete: node was uncordoned after reaching ReadyForMaintenance.
+//     This is the expected end of the maintenance workflow, not a drift situation.
+//     Handled with a Normal event and clean ownership release.
 //
 //   - ManualUncordon: plan requires cordon, operator cordoned the node, but it is
-//     now schedulable. Ownership should be released.
+//     now schedulable before maintenance was complete. Ownership is released.
+//
 //   - ExternalCordon: plan does not require cordon, but the node is unschedulable
 //     due to an external actor. Ownership is retained; the operator skips the node.
 func DetectNodeDrift(node *corev1.Node, plan *v1alpha1.NodeMaintenancePlan) (bool, string) {
@@ -41,6 +60,13 @@ func DetectNodeDrift(node *corev1.Node, plan *v1alpha1.NodeMaintenancePlan) (boo
 	operatorCordoned := node.Annotations[CordonedAnnotation] == "true"
 
 	if cordonEnabled && operatorCordoned && !node.Spec.Unschedulable {
+		// Node was uncordoned. Check whether maintenance was already complete —
+		// if so this is the expected final step, not unwanted interference.
+		for _, ns := range plan.Status.Nodes {
+			if ns.Name == node.Name && ns.ReadyForMaintenance {
+				return true, DriftReasonMaintenanceComplete
+			}
+		}
 		return true, DriftReasonManualUncordon
 	}
 
@@ -60,5 +86,3 @@ func GetNodeDriftState(plan *v1alpha1.NodeMaintenancePlan, nodeName string) (dri
 	}
 	return false, ""
 }
-
-// TODO: add logic for handling manual drain drift
