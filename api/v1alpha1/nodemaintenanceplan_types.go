@@ -217,8 +217,6 @@ type NodeStatus struct {
 
 	BlockedPods int32 `json:"blockedPods,omitempty"`
 
-	UnschedulablePods int32 `json:"unschedulablePods,omitempty"`
-
 	EvictedTotal int32 `json:"evictedTotal,omitempty"`
 
 	// Dry-run analysis computed before drain starts.
@@ -254,10 +252,6 @@ type NodeMaintenancePlanStatus struct {
 	// +optional
 	Nodes []NodeStatus `json:"nodes,omitempty"`
 
-	// List of nodes with detected drift
-	// +optional
-	DriftedNodes []string `json:"driftedNodes,omitempty"`
-
 	// Time at which the drain phase first became active (DrainInProgress=True).
 	// Used to enforce drain.timeoutMinutes.
 	// +optional
@@ -275,11 +269,7 @@ type NodeMaintenancePlanStatus struct {
 	// +optional
 	TotalPreviewIssues int32 `json:"totalPreviewIssues,omitempty"`
 
-	// Last error message if preview or execution failed
-	// +optional
-	LastError string `json:"lastError,omitempty"`
-
-	// ObservedGeneration reflects latest reconciled spec
+	// ObservedGeneration reflects the generation of the spec last fully reconciled by the controller.
 	// +optional
 	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
 

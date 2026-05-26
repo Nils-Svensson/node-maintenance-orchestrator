@@ -13,6 +13,7 @@ package maintenance
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -125,6 +126,7 @@ func (s *MaintenanceService) UpdateStatus(ctx context.Context, plan *v1alpha1.No
 
 	plan.Status.Nodes = statuses
 	plan.Status.NodeCount = int32(len(statuses))
+	plan.Status.ObservedGeneration = plan.Generation
 
 	// NodesSelected — at least one node is under management.
 	if len(statuses) > 0 {
@@ -174,7 +176,7 @@ func (s *MaintenanceService) UpdateStatus(ctx context.Context, plan *v1alpha1.No
 	isScheduled := !allCordoned &&
 		plan.Spec.Cordon != nil && plan.Spec.Cordon.Enabled &&
 		plan.Spec.Cordon.StartAt != nil &&
-		plan.Spec.Cordon.StartAt.Time.After(s.clock.Now())
+		plan.Spec.Cordon.StartAt.After(s.clock.Now())
 	if isScheduled {
 		setCondition(plan, v1alpha1.ConditionScheduled, metav1.ConditionTrue,
 			"ScheduledInFuture", fmt.Sprintf("cordon scheduled for %s",
@@ -182,6 +184,21 @@ func (s *MaintenanceService) UpdateStatus(ctx context.Context, plan *v1alpha1.No
 	} else {
 		setCondition(plan, v1alpha1.ConditionScheduled, metav1.ConditionFalse,
 			"NotScheduled", "No pending scheduled activation")
+	}
+
+	// DriftDetected — at least one managed node has diverged from desired state.
+	var driftedNames []string
+	for _, ns := range statuses {
+		if ns.Drifted {
+			driftedNames = append(driftedNames, ns.Name)
+		}
+	}
+	if len(driftedNames) > 0 {
+		setCondition(plan, v1alpha1.ConditionDriftDetected, metav1.ConditionTrue,
+			"NodeDrifted", fmt.Sprintf("%d node(s) drifted: %s", len(driftedNames), strings.Join(driftedNames, ", ")))
+	} else {
+		setCondition(plan, v1alpha1.ConditionDriftDetected, metav1.ConditionFalse,
+			"NoDrift", "No managed nodes have drifted")
 	}
 
 	recomputePlanSummaries(plan)

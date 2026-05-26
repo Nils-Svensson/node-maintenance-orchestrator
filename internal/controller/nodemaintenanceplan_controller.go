@@ -23,8 +23,6 @@ import (
 
 	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/utils/clock"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -45,19 +43,17 @@ import (
 
 // NodeMaintenancePlanReconciler reconciles a NodeMaintenancePlan object
 type NodeMaintenancePlanReconciler struct {
-	Client        client.Client
-	Scheme        *runtime.Scheme
-	Recorder      record.EventRecorder
-	ManagerConfig *rest.Config
+	Client   client.Client
+	Recorder record.EventRecorder
 }
 
 const finalizerName = v1alpha1.NodeMaintenancePlanFinalizer
 
-// +kubebuilder:rbac:groups=maintenance.nmoo.io,resources=nodemaintenanceplans,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=maintenance.nmoo.io,resources=nodemaintenanceplans/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=maintenance.nmoo.io,resources=nodemaintenanceplans,verbs=get;list;watch;patch
+// +kubebuilder:rbac:groups=maintenance.nmoo.io,resources=nodemaintenanceplans/status,verbs=get;patch
 // +kubebuilder:rbac:groups=maintenance.nmoo.io,resources=nodemaintenanceplans/finalizers,verbs=update
-// +kubebuilder:rbac:groups="",resources=nodes,verbs=get;list;watch;patch;update
-// +kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch
+// +kubebuilder:rbac:groups="",resources=nodes,verbs=get;list;watch;patch
+// +kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch;delete
 // +kubebuilder:rbac:groups="",resources=pods/eviction,verbs=create
 // +kubebuilder:rbac:groups="",resources=events,verbs=create;patch
 // +kubebuilder:rbac:groups=policy,resources=poddisruptionbudgets,verbs=list

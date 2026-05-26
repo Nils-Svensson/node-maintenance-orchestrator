@@ -180,7 +180,6 @@ func main() {
 
 	if err := (&controller.NodeMaintenancePlanReconciler{
 		Client:   mgr.GetClient(),
-		Scheme:   mgr.GetScheme(),
 		Recorder: mgr.GetEventRecorderFor("node-maintenance-orchestrator"),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "NodeMaintenancePlan")

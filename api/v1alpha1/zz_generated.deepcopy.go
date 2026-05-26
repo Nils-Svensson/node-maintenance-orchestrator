@@ -255,11 +255,6 @@ func (in *NodeMaintenancePlanStatus) DeepCopyInto(out *NodeMaintenancePlanStatus
 			(*in)[i].DeepCopyInto(&(*out)[i])
 		}
 	}
-	if in.DriftedNodes != nil {
-		in, out := &in.DriftedNodes, &out.DriftedNodes
-		*out = make([]string, len(*in))
-		copy(*out, *in)
-	}
 	if in.DrainStartedAt != nil {
 		in, out := &in.DrainStartedAt, &out.DrainStartedAt
 		*out = (*in).DeepCopy()

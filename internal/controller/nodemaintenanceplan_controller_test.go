@@ -70,7 +70,6 @@ var _ = Describe("NodeMaintenancePlan Controller", func() {
 			By("Reconciling the created resource")
 			controllerReconciler := &NodeMaintenancePlanReconciler{
 				Client: k8sClient,
-				Scheme: k8sClient.Scheme(),
 			}
 
 			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{

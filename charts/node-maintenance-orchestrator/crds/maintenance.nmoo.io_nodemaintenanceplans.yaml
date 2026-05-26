@@ -290,14 +290,6 @@ spec:
                 description: Drifted is true when at least one managed node has diverged
                   from the desired cordon state.
                 type: boolean
-              driftedNodes:
-                description: List of nodes with detected drift
-                items:
-                  type: string
-                type: array
-              lastError:
-                description: Last error message if preview or execution failed
-                type: string
               lastPreviewTime:
                 description: Last time preview was computed
                 format: date-time
@@ -425,15 +417,13 @@ spec:
                         of pods on the node calculated on each reconciliation loop.
                       format: int32
                       type: integer
-                    unschedulablePods:
-                      format: int32
-                      type: integer
                   required:
                   - name
                   type: object
                 type: array
               observedGeneration:
-                description: ObservedGeneration reflects latest reconciled spec
+                description: ObservedGeneration reflects the generation of the spec
+                  last fully reconciled by the controller.
                 format: int64
                 type: integer
               phase:
