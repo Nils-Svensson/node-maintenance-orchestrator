@@ -140,7 +140,7 @@ spec:
       podTerminationGracePeriodSeconds: 60
 ```
 
-The operator immediately adopts all three nodes. Cordon fires at 02:00 — the 15-minute gap gives load balancers time to shed connections before pods are evicted. Drain starts at 02:15, processing two nodes at a time.
+The operator immediately adopts all three nodes and computes a preview of drain. Cordon fires at 02:00 — the 15-minute gap gives load balancers time to shed connections before pods are evicted. Drain starts at 02:15, processing two nodes at a time.
 
 ### 2. Monitor progress
 
@@ -156,7 +156,7 @@ kubectl describe nmp worker-upgrade
 
 ### 3. Return nodes to service as they complete
 
-Nodes finish draining at different times depending on their workload. As soon as worker-1 finishes draining and reaches `ReadyForMaintenance=true`, the drain slot it held is freed and drain starts on worker-3 immediately — no uncordon required.
+Nodes finish draining at different times depending on their workload. As soon as worker-1 finishes draining and reaches `ReadyForMaintenance=true`, the drain slot it held is freed and drain starts on worker-3 immediately.
 
 When a node reaches `ReadyForMaintenance=true`, perform the physical maintenance (reboot, firmware update, etc.), then uncordon it:
 

@@ -17,18 +17,24 @@ spec:
   scope: Cluster
   versions:
   - additionalPrinterColumns:
-    - jsonPath: .status.nodes.size()
-      name: Nodes
-      type: integer
-    - jsonPath: .status.conditions[?(@.type=='Cordoned')].status
-      name: Cordoned
+    - jsonPath: .status.phase
+      name: Phase
       type: string
-    - jsonPath: .status.conditions[?(@.type=='DrainInProgress')].status
+    - jsonPath: .status.readySummary
+      name: Ready
+      type: string
+    - jsonPath: .status.drainProgress
+      name: Progress
+      type: string
+    - jsonPath: .status.drainingNodeCount
       name: Draining
       type: string
-    - jsonPath: .status.driftedNodes
+    - jsonPath: .status.blockedNodeCount
+      name: Blocked
+      type: string
+    - jsonPath: .status.drifted
       name: Drift
-      type: integer
+      type: boolean
     - jsonPath: .metadata.creationTimestamp
       name: Age
       type: date
@@ -204,6 +210,10 @@ spec:
                 description: True when all nodes have status readyForMaintenance =
                   true
                 type: boolean
+              blockedNodeCount:
+                description: BlockedNodeCount is the number of nodes with at least
+                  one pod blocking drain, as "blocked/total".
+                type: string
               conditions:
                 description: Conditions represent current state of the plan
                 items:
@@ -261,12 +271,25 @@ spec:
                   - type
                   type: object
                 type: array
+              drainProgress:
+                description: DrainProgress is the average drain progress across all
+                  managed nodes, formatted as "X%".
+                type: string
               drainStartedAt:
                 description: |-
                   Time at which the drain phase first became active (DrainInProgress=True).
                   Used to enforce drain.timeoutMinutes.
                 format: date-time
                 type: string
+              drainingNodeCount:
+                description: |-
+                  DrainingNodeCount is the number of nodes that are cordoned, not yet ready,
+                  and still have pods being evicted.
+                type: string
+              drifted:
+                description: Drifted is true when at least one managed node has diverged
+                  from the desired cordon state.
+                type: boolean
               driftedNodes:
                 description: List of nodes with detected drift
                 items:
@@ -279,6 +302,10 @@ spec:
                 description: Last time preview was computed
                 format: date-time
                 type: string
+              nodeCount:
+                description: Number of nodes currently managed by this plan.
+                format: int32
+                type: integer
               nodeSnapshotTaken:
                 description: |-
                   NodeSnapshotTaken is true once the NodeSelector snapshot has been taken.
@@ -409,6 +436,14 @@ spec:
                 description: ObservedGeneration reflects latest reconciled spec
                 format: int64
                 type: integer
+              phase:
+                description: |-
+                  Phase is a human-readable lifecycle summary: Pending, Adopted, Cordoned,
+                  Draining, Blocked, Ready, TimedOut, or Conflict.
+                type: string
+              readySummary:
+                description: ReadySummary is a "ready/total" fraction, e.g. "2/3".
+                type: string
               resolvedNodes:
                 description: |-
                   ResolvedNodes holds the snapshot of node names selected when this plan uses

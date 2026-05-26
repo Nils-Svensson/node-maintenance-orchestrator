@@ -1,3 +1,13 @@
+// TODO(failure-modes): DrainTimedOut is currently the only terminal failure state.
+// Future work should consider:
+//   - A ConditionFailed condition set after N consecutive eviction errors, so a
+//     permanently broken eviction path (e.g. a mis-configured admission webhook)
+//     doesn't spin forever on exponential backoff.
+//   - Handling node disappearance mid-drain: ownership resolution already drops
+//     the node from res.Stable, but there is no explicit failure event.
+//   - A plan-level MaxRetries or ConsecutiveErrors counter to gate transitions
+//     to Failed without relying solely on wall-clock timeout.
+
 package maintenance
 
 import (
@@ -187,6 +197,8 @@ func (s *MaintenanceService) applyDrainResults(ctx context.Context, plan *v1alph
 		s.recorder.Eventf(plan, corev1.EventTypeNormal, "AllNodesReadyForMaintenance",
 			"all managed nodes are ready for maintenance")
 	}
+
+	recomputePlanSummaries(plan)
 
 	if err := s.client.Status().Patch(ctx, plan, client.MergeFrom(original)); err != nil {
 		return 0, fmt.Errorf("patching drain status: %w", err)

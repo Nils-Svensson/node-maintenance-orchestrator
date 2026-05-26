@@ -19,7 +19,10 @@ import (
 func (s *MaintenanceService) ReconcilePreview(ctx context.Context, plan *v1alpha1.NodeMaintenancePlan, res *OwnershipResolution) error {
 	cfg := getDrainConfig(plan)
 	if cfg == nil {
-		return nil
+		cfg = &drainConfig{
+			IgnoreDaemonSets:            true,
+			RespectPodDisruptionBudgets: true,
+		}
 	}
 
 	if isDrainInProgress(plan) {

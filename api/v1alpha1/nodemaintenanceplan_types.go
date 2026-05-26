@@ -286,6 +286,36 @@ type NodeMaintenancePlanStatus struct {
 	// True when all nodes have status readyForMaintenance = true
 	// +optional
 	AllNodesReadyForMaintenance bool `json:"allNodesReadyForMaintenance,omitempty"`
+
+	// Number of nodes currently managed by this plan.
+	// +optional
+	NodeCount int32 `json:"nodeCount,omitempty"`
+
+	// Phase is a human-readable lifecycle summary: Pending, Adopted, Cordoned,
+	// Draining, Blocked, Ready, TimedOut, or Conflict.
+	// +optional
+	Phase string `json:"phase,omitempty"`
+
+	// ReadySummary is a "ready/total" fraction, e.g. "2/3".
+	// +optional
+	ReadySummary string `json:"readySummary,omitempty"`
+
+	// DrainProgress is the average drain progress across all managed nodes, formatted as "X%".
+	// +optional
+	DrainProgress string `json:"drainProgress,omitempty"`
+
+	// DrainingNodeCount is the number of nodes that are cordoned, not yet ready,
+	// and still have pods being evicted.
+	// +optional
+	DrainingNodeCount string `json:"drainingNodeCount,omitempty"`
+
+	// BlockedNodeCount is the number of nodes with at least one pod blocking drain, as "blocked/total".
+	// +optional
+	BlockedNodeCount string `json:"blockedNodeCount,omitempty"`
+
+	// Drifted is true when at least one managed node has diverged from the desired cordon state.
+	// +optional
+	Drifted *bool `json:"drifted,omitempty"`
 }
 
 //
@@ -296,10 +326,12 @@ type NodeMaintenancePlanStatus struct {
 // +kubebuilder:object:generate=true
 // +kubebuilder:subresource:status
 // +kubebuilder:resource:scope=Cluster,shortName=nmp
-// +kubebuilder:printcolumn:name="Nodes",type=integer,JSONPath=".status.nodes.size()"
-// +kubebuilder:printcolumn:name="Cordoned",type=string,JSONPath=".status.conditions[?(@.type=='Cordoned')].status"
-// +kubebuilder:printcolumn:name="Draining",type=string,JSONPath=".status.conditions[?(@.type=='DrainInProgress')].status"
-// +kubebuilder:printcolumn:name="Drift",type=integer,JSONPath=".status.driftedNodes"
+// +kubebuilder:printcolumn:name="Phase",type=string,JSONPath=".status.phase"
+// +kubebuilder:printcolumn:name="Ready",type=string,JSONPath=".status.readySummary"
+// +kubebuilder:printcolumn:name="Progress",type=string,JSONPath=".status.drainProgress"
+// +kubebuilder:printcolumn:name="Draining",type=string,JSONPath=".status.drainingNodeCount"
+// +kubebuilder:printcolumn:name="Blocked",type=string,JSONPath=".status.blockedNodeCount"
+// +kubebuilder:printcolumn:name="Drift",type=boolean,JSONPath=".status.drifted"
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=".metadata.creationTimestamp"
 type NodeMaintenancePlan struct {
 	metav1.TypeMeta   `json:",inline"`

@@ -230,7 +230,10 @@ func (r *NodeMaintenancePlanReconciler) handleDeletion(ctx context.Context, log 
 	}
 	original := plan.DeepCopy()
 	controllerutil.RemoveFinalizer(plan, finalizerName)
-	return r.Client.Patch(ctx, plan, client.MergeFrom(original))
+	if err := r.Client.Patch(ctx, plan, client.MergeFrom(original)); err != nil && !apierrors.IsNotFound(err) {
+		return err
+	}
+	return nil
 }
 
 // nodeToPlans maps a Node event to the set of NodeMaintenancePlans that reference the node in their spec,
