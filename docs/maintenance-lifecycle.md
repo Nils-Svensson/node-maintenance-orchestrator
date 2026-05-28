@@ -58,7 +58,7 @@ The 15-minute gap between `cordon.startAt` and `drain.startAt` in this example g
 
 At `drain.startAt`, drain starts on up to `maxParallel` nodes at a time. Phase moves to `Draining`.
 
-If `drain.startAt` is omitted, drain begins as soon as nodes are cordoned — there is no delay between cordon and drain. Set `drain.startAt` only when you want a deliberate gap, for example to allow load balancers to shed connections before pods start terminating.
+If `drain.startAt` is omitted, drain begins as soon as nodes are cordoned — there is no delay between cordon and drain. Set `drain.startAt` only when you want a deliberate gap.
 
 Each drain pass:
 1. Classifies pods as evictable, blocked (PDB or config), or terminating.

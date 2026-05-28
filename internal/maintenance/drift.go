@@ -86,3 +86,15 @@ func GetNodeDriftState(plan *v1alpha1.NodeMaintenancePlan, nodeName string) (dri
 	}
 	return false, ""
 }
+
+// nodeCompletedMaintenance reports whether nodeName has already completed
+// maintenance (readyForMaintenance=true in status). Used to prevent
+// re-adoption after ReconcileDrift releases a completed node.
+func nodeCompletedMaintenance(plan *v1alpha1.NodeMaintenancePlan, nodeName string) bool {
+	for _, ns := range plan.Status.Nodes {
+		if ns.Name == nodeName {
+			return ns.ReadyForMaintenance
+		}
+	}
+	return false
+}

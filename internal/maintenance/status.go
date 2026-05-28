@@ -35,10 +35,10 @@ func recomputePlanSummaries(plan *v1alpha1.NodeMaintenancePlan) {
 		totalProgress += ns.DrainProgress
 		if ns.ReadyForMaintenance {
 			ready++
-		} else if ns.TotalPods > 0 {
+		} else if ns.TotalPods > 0 && ns.BlockedPods < ns.TotalPods {
 			draining++
 		}
-		if ns.BlockedPods > 0 {
+		if ns.BlockedPods > 0 && ns.BlockedPods == ns.TotalPods {
 			blocked++
 		}
 		if ns.Drifted {

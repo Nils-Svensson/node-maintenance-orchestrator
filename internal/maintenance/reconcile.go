@@ -37,6 +37,10 @@ func (s *MaintenanceService) ReconcileOwnership(ctx context.Context, plan *v1alp
 			s.log.V(1).Info("skipping re-adoption of drifted node", "node", node.Name)
 			continue
 		}
+		if nodeCompletedMaintenance(plan, node.Name) {
+			s.log.V(1).Info("skipping re-adoption of node that completed maintenance", "node", node.Name)
+			continue
+		}
 		if err := s.AdoptNode(ctx, node, plan, cordonEnabled && cordonNow); err != nil {
 			return fmt.Errorf("adopting node %q: %w", node.Name, err)
 		}

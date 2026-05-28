@@ -34,6 +34,7 @@ spec:
   nodes:
     - kind-worker3
     - kind-worker4
+    - kind-worker5
 
   cordon:
     enabled: true
@@ -73,7 +74,7 @@ kubectl get nmp demo
 
 ```text
 NAME   PHASE     READY   PROGRESS   DRAINING   BLOCKED   DRIFT   AGE
-demo   Blocked   1/2     50%        1/2        1/2       false   47s
+demo   Draining   1/3     67%        2/3        0/3      false   47s
 ```
 
 The operator reports:
