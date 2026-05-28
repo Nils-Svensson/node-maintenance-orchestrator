@@ -87,6 +87,13 @@ The operator reports:
 
 ---
 
+## Requirements
+
+- Kubernetes 1.27+ (tested against 1.35.1; likely works on 1.27 and later)
+- Helm 3 (for Helm-based installation)
+
+---
+
 ## Installation
 
 ### Helm
@@ -102,6 +109,23 @@ helm install nmo oci://ghcr.io/nils-svensson/charts/node-maintenance-orchestrato
 
 ```bash
 kubectl apply -f https://github.com/Nils-Svensson/node-maintenance-orchestrator/releases/download/<version>/install.yaml
+```
+
+---
+
+## Uninstall
+
+### Helm
+
+```bash
+helm uninstall nmo --namespace nmo-system
+kubectl delete namespace nmo-system
+```
+
+### kubectl
+
+```bash
+kubectl delete -f https://github.com/Nils-Svensson/node-maintenance-orchestrator/releases/download/<version>/install.yaml
 ```
 
 ---
@@ -130,7 +154,7 @@ APIs and behavior may change before v1beta1.
 - **nodeSelector drift recovery** — re-adopt a drifted node without requiring the plan to be deleted and recreated
 - **Node disappearance handling** — explicit failure handling when a managed node disappears mid-drain
 - **Validating webhook** — to reject creation of plans with nodes that don't exist in the cluster, as well as nodes already owned by another plan
-- **Richer preview** — depending on feasability and complexity
+- **Richer preview** — depending on feasibility and complexity
 - **Enforcement policy** — an `enforcementPolicy` option letting users choose between the current cooperative mode and an authoritative mode that actively re-enforces the desired cordon state against external changes
 
 ---
