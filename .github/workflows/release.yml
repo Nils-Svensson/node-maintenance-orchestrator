@@ -63,22 +63,18 @@ jobs:
 
       - name: Package Helm chart
         run: |
-          CHART_VERSION="${{ github.ref_name }}"
-          CHART_VERSION="${CHART_VERSION#v}"
           helm package charts/node-maintenance-orchestrator \
-            --version "${CHART_VERSION}" \
+            --version "${{ github.ref_name }}" \
             --app-version "${{ github.ref_name }}" \
             --destination dist/
 
       - name: Push Helm chart to ghcr.io
         run: |
-          CHART_VERSION="${{ github.ref_name }}"
-          CHART_VERSION="${CHART_VERSION#v}"
           REPO_OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
           helm registry login ghcr.io \
             --username "${{ github.actor }}" \
             --password "${{ secrets.GITHUB_TOKEN }}"
-          helm push "dist/node-maintenance-orchestrator-${CHART_VERSION}.tgz" \
+          helm push "dist/node-maintenance-orchestrator-${{ github.ref_name }}.tgz" \
             oci://ghcr.io/${REPO_OWNER}/charts
 
       - name: Create GitHub Release
