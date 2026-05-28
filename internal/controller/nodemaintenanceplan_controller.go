@@ -35,6 +35,7 @@ import (
 
 	"github.com/Nils-Svensson/node-maintenance-orchestrator/api/v1alpha1"
 	"github.com/Nils-Svensson/node-maintenance-orchestrator/internal/maintenance"
+	"github.com/Nils-Svensson/node-maintenance-orchestrator/internal/metrics"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
@@ -170,6 +171,8 @@ func (r *NodeMaintenancePlanReconciler) Reconcile(ctx context.Context, req ctrl.
 	if drainRequeue != 0 {
 		requeueAfter = drainRequeue
 	}
+
+	metrics.RecordPlan(plan)
 	return ctrl.Result{RequeueAfter: requeueAfter}, nil
 
 }
@@ -224,6 +227,7 @@ func (r *NodeMaintenancePlanReconciler) handleDeletion(ctx context.Context, log 
 	if err := svc.CleanUp(ctx, plan); err != nil {
 		return err
 	}
+	metrics.DeletePlan(plan)
 	original := plan.DeepCopy()
 	controllerutil.RemoveFinalizer(plan, finalizerName)
 	if err := r.Client.Patch(ctx, plan, client.MergeFrom(original)); err != nil && !apierrors.IsNotFound(err) {
