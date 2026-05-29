@@ -130,7 +130,7 @@ If you remove a node name from `spec.nodes`, the operator detects the change on 
 
 ## Conflict between plans
 
-Two plans cannot manage the same node. If a node in `spec.nodes` is already owned by another plan, the plan enters the `Conflict` phase and an `OwnershipConflict` warning event is fired. The conflicting node is not managed by either plan until the conflict is resolved.
+Two plans cannot manage the same node. If a node in `spec.nodes` is already owned by another plan, the new plan enters the `Conflict` phase and an `OwnershipConflict` warning event is fired. The node remains managed by the original plan; the new plan will not adopt it until the conflict is resolved.
 
 ---
 

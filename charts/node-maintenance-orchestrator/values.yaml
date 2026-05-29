@@ -19,7 +19,11 @@ leaderElection:
 metrics:
   enabled: true
   service:
-    port: 8443
+    port: 8080
+  serviceMonitor:
+    enabled: false
+    interval: 30s
+    # additionalLabels: {}  # extra labels to add to the ServiceMonitor (e.g. for Prometheus selector)
 
 resources:
   limits:
