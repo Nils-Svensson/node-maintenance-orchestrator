@@ -262,7 +262,7 @@ func updateNodeDrainStatus(plan *v1alpha1.NodeMaintenancePlan, nodeName string, 
 
 		ns.TotalPods = outcome.Total
 		ns.EvictablePods = outcome.Evictable
-		ns.BlockedPods = outcome.Total - outcome.Evictable
+		ns.BlockedPods = outcome.Total - outcome.Evictable - outcome.Terminating
 		ns.EvictedTotal += outcome.Evicted
 		ns.Issues = issues
 

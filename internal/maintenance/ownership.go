@@ -15,6 +15,7 @@ const (
 	ManagedByAnnotation = v1alpha1.ManagedByAnnotation
 	ReasonAnnotation    = v1alpha1.ReasonAnnotation
 	CordonedAnnotation  = v1alpha1.CordonedAnnotation
+	InMaintenanceLabel  = v1alpha1.InMaintenanceLabel
 )
 
 // OwnershipResolution is the result of diffing desired vs currently managed nodes.
@@ -154,10 +155,6 @@ func ComputeOwnership(desired map[string]*corev1.Node, managed map[string]*corev
 // which would otherwise look like ManualUncordon drift to a concurrent reconcile.
 func (s *MaintenanceService) AdoptNode(ctx context.Context, node *corev1.Node, plan *v1alpha1.NodeMaintenancePlan, cordon bool) error {
 
-	// TODO: Add label maintenance.nmoo.io/in-maintenance = "true, either here or once cordon is active,
-	// which can be used by other operators (e.g. autoscaler) to avoid scheduling new pods on the node.
-	// This should maybe be set regardless of cordon behavior, since even if cordon is disabled,
-	// the plan still considers the node in maintenance and would want to avoid new scheduling.
 	log := s.log.WithValues("node", node.Name)
 
 	original := node.DeepCopy()
@@ -165,9 +162,13 @@ func (s *MaintenanceService) AdoptNode(ctx context.Context, node *corev1.Node, p
 	if node.Annotations == nil {
 		node.Annotations = map[string]string{}
 	}
+	if node.Labels == nil {
+		node.Labels = map[string]string{}
+	}
 
 	node.Annotations[ManagedByAnnotation] = plan.Name
 	node.Annotations[ReasonAnnotation] = plan.Spec.Reason
+	node.Labels[InMaintenanceLabel] = "true"
 
 	if cordon {
 		if !node.Spec.Unschedulable {

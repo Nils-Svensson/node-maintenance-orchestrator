@@ -59,7 +59,7 @@ func (s *MaintenanceService) drainNode(ctx context.Context, plan *v1alpha1.NodeM
 	}
 
 	outcome := drainOutcome{
-		Total:            int32(len(result.Evictable) + len(result.Blocked) + len(result.StuckTerminating)),
+		Total:            int32(len(result.Evictable) + len(result.Blocked) + len(result.Terminating) + len(result.StuckTerminating)),
 		Evictable:        int32(len(result.Evictable)),
 		Terminating:      int32(len(result.Terminating)),
 		StuckTerminating: int32(len(result.StuckTerminating)),

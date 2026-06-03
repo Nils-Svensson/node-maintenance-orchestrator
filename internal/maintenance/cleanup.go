@@ -58,6 +58,7 @@ func (s *MaintenanceService) ReleaseNode(ctx context.Context, node *corev1.Node,
 	delete(node.Annotations, ManagedByAnnotation)
 	delete(node.Annotations, ReasonAnnotation)
 	delete(node.Annotations, CordonedAnnotation)
+	delete(node.Labels, InMaintenanceLabel)
 
 	log.Info("releasing node ownership")
 
