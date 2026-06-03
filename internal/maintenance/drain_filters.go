@@ -56,7 +56,7 @@ func classifyPods(pods []corev1.Pod, cfg *drainConfig, now time.Time) *drainFilt
 			if pod.Spec.TerminationGracePeriodSeconds != nil {
 				gracePeriod = *pod.Spec.TerminationGracePeriodSeconds
 			}
-			deadline := pod.DeletionTimestamp.Time.Add(
+			deadline := pod.DeletionTimestamp.Add(
 				time.Duration(gracePeriod)*time.Second + stuckTerminatingBuffer,
 			)
 			if now.After(deadline) {

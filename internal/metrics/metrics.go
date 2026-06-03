@@ -66,7 +66,6 @@ var (
 		Name: "nmo_node_blocked_pods",
 		Help: "Number of pods currently blocking drain on this node.",
 	}, []string{"plan", "node"})
-
 )
 
 func init() {
