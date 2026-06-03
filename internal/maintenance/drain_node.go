@@ -25,10 +25,12 @@ type drainConfig struct {
 // drainOutcome carries per-node counters back to ReconcileDrain so it can
 // compute requeue intervals and update NodeStatus without re-listing pods.
 type drainOutcome struct {
-	Evicted     int // eviction requests sent in this reconcile pass
-	Total       int // evictable + config-blocked pods at classification time
-	Evictable   int // pods that were evictable at classification time
-	Terminating int // pods already evicted, waiting for physical removal
+	Evicted          int32        // eviction requests sent in this reconcile pass
+	Total            int32        // evictable + config-blocked + stuck-terminating pods
+	Evictable        int32        // pods that were evictable at classification time
+	Terminating      int32        // pods actively terminating within their grace period
+	StuckTerminating int32        // pods whose DeletionTimestamp has exceeded their grace period
+	StuckPods        []corev1.Pod // pod objects for stuck terminating pods (for Issues)
 }
 
 // drainBlockedError is returned when pods on the node prevent drain from proceeding.
@@ -57,9 +59,11 @@ func (s *MaintenanceService) drainNode(ctx context.Context, plan *v1alpha1.NodeM
 	}
 
 	outcome := drainOutcome{
-		Total:       len(result.Evictable) + len(result.Blocked),
-		Evictable:   len(result.Evictable),
-		Terminating: len(result.Terminating),
+		Total:            int32(len(result.Evictable) + len(result.Blocked) + len(result.StuckTerminating)),
+		Evictable:        int32(len(result.Evictable)),
+		Terminating:      int32(len(result.Terminating)),
+		StuckTerminating: int32(len(result.StuckTerminating)),
+		StuckPods:        result.StuckTerminating,
 	}
 
 	if len(result.Blocked) > 0 {

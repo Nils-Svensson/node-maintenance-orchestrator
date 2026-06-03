@@ -3,21 +3,29 @@ package maintenance
 import (
 	"context"
 	"fmt"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-// drainFilterResult categorises pods on a node into four buckets.
+// drainFilterResult categorises pods on a node into five buckets.
 // Evictable will be evicted. Blocked prevent drain from proceeding.
-// Terminating have already been evicted and are awaiting removal.
+// Terminating have already been evicted and are awaiting removal within their grace period.
+// StuckTerminating have exceeded their grace period and are no longer making progress.
 // Skipped are intentionally left alone (mirror pods, DaemonSets, completed pods).
 type drainFilterResult struct {
-	Evictable   []corev1.Pod
-	Blocked     []corev1.Pod
-	Terminating []corev1.Pod
-	Skipped     []corev1.Pod
+	Evictable        []corev1.Pod
+	Blocked          []corev1.Pod
+	Terminating      []corev1.Pod
+	StuckTerminating []corev1.Pod
+	Skipped          []corev1.Pod
 }
+
+// stuckTerminatingBuffer is the additional time beyond a pod's
+// terminationGracePeriodSeconds before it is considered stuck. Accounts for
+// kubelet and API server propagation latency.
+const stuckTerminatingBuffer = 60 * time.Second
 
 // filterPodsForDrain lists all pods on the node and classifies them.
 func (s *MaintenanceService) filterPodsForDrain(ctx context.Context, node *corev1.Node, cfg *drainConfig) (*drainFilterResult, error) {
@@ -25,11 +33,12 @@ func (s *MaintenanceService) filterPodsForDrain(ctx context.Context, node *corev
 	if err := s.client.List(ctx, &podList, client.MatchingFields{"spec.nodeName": node.Name}); err != nil {
 		return nil, fmt.Errorf("listing pods on node %s: %w", node.Name, err)
 	}
-	return classifyPods(podList.Items, cfg), nil
+	return classifyPods(podList.Items, cfg, s.clock.Now()), nil
 }
 
 // classifyPods is a pure function that categorises a pod slice according to cfg.
-func classifyPods(pods []corev1.Pod, cfg *drainConfig) *drainFilterResult {
+// now is used to detect pods stuck in terminating state.
+func classifyPods(pods []corev1.Pod, cfg *drainConfig, now time.Time) *drainFilterResult {
 	result := &drainFilterResult{}
 	for i := range pods {
 		pod := &pods[i]
@@ -40,10 +49,21 @@ func classifyPods(pods []corev1.Pod, cfg *drainConfig) *drainFilterResult {
 			continue
 		}
 
-		// Already-terminating pods: eviction was issued previously. Count separately
-		// so drain does not report completion until the node is physically empty.
+		// Terminating pods: eviction was issued previously. Distinguish between pods
+		// still within their grace period and those that have exceeded it and are stuck.
 		if pod.DeletionTimestamp != nil {
-			result.Terminating = append(result.Terminating, *pod)
+			gracePeriod := int64(30)
+			if pod.Spec.TerminationGracePeriodSeconds != nil {
+				gracePeriod = *pod.Spec.TerminationGracePeriodSeconds
+			}
+			deadline := pod.DeletionTimestamp.Time.Add(
+				time.Duration(gracePeriod)*time.Second + stuckTerminatingBuffer,
+			)
+			if now.After(deadline) {
+				result.StuckTerminating = append(result.StuckTerminating, *pod)
+			} else {
+				result.Terminating = append(result.Terminating, *pod)
+			}
 			continue
 		}
 

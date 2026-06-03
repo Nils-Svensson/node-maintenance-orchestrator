@@ -150,7 +150,6 @@ APIs and behavior may change before v1beta1.
 
 ## What's next
 
-- **Richer failure conditions** — a `Failed` condition after N consecutive eviction errors, so a permanently broken eviction path does not spin indefinitely on retries
 - **nodeSelector drift recovery** — re-adopt a drifted node without requiring the plan to be deleted and recreated
 - **Node disappearance handling** — explicit failure handling when a managed node disappears mid-drain
 - **Validating webhook** — to reject creation of plans with nodes that don't exist in the cluster, as well as nodes already owned by another plan

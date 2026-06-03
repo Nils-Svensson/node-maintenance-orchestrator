@@ -27,8 +27,7 @@ import (
 // Call it whenever plan.Status.Nodes changes.
 func recomputePlanSummaries(plan *v1alpha1.NodeMaintenancePlan) {
 	var ready, draining, blocked, totalProgress int32
-	var anyDrifted bool
-	anyDrifted = false
+	anyDrifted := false
 	total := int32(len(plan.Status.Nodes))
 
 	for _, ns := range plan.Status.Nodes {

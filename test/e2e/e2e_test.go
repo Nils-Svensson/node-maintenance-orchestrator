@@ -1131,6 +1131,127 @@ spec:
 			}, 15*time.Second, 3*time.Second).Should(Succeed())
 		})
 
+		It("should detect pods stuck in Terminating beyond their grace period and report DrainBlocked with StuckTerminating issues", func() {
+			target := workerNodes[0]
+			nmpName := "e2e-stuck-terminating"
+			podName := "e2e-stuck-term-pod"
+
+			DeferCleanup(func() {
+				// Strip the finalizer so the pod can be garbage-collected.
+				cmd := exec.Command("kubectl", "patch", "pod", podName, "-n", "default",
+					"--type=merge", "-p", `{"metadata":{"finalizers":[]}}`)
+				_, _ = utils.Run(cmd)
+				cmd = exec.Command("kubectl", "delete", "pod", podName, "-n", "default",
+					"--ignore-not-found=true", "--wait=false")
+				_, _ = utils.Run(cmd)
+			})
+
+			By("creating a pod with a finalizer that prevents deletion after eviction")
+			podYAML := fmt.Sprintf(`
+apiVersion: v1
+kind: Pod
+metadata:
+  name: %s
+  namespace: default
+  finalizers:
+    - maintenance.nmoo.io/e2e-test
+spec:
+  nodeName: %s
+  terminationGracePeriodSeconds: 1
+  containers:
+  - name: pause
+    image: registry.k8s.io/pause:3.9
+`, podName, target)
+			cmd := exec.Command("kubectl", "apply", "-f", "-")
+			cmd.Stdin = strings.NewReader(podYAML)
+			_, err := utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred())
+
+			By("waiting for pod to be Running")
+			Eventually(func(g Gomega) {
+				cmd := exec.Command("kubectl", "get", "pod", podName, "-n", "default",
+					"-o", "jsonpath={.status.phase}")
+				output, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(output).To(Equal("Running"))
+			}).Should(Succeed())
+
+			By("creating NMP with cordon, drain, and force=true so the bare pod is evictable")
+			nmpYAML := fmt.Sprintf(`
+apiVersion: maintenance.nmoo.io/v1alpha1
+kind: NodeMaintenancePlan
+metadata:
+  name: %s
+spec:
+  nodes:
+    - %s
+  reason: "e2e stuck terminating test"
+  cordon:
+    enabled: true
+  drain:
+    enabled: true
+    options:
+      force: true
+      ignoreDaemonSets: true
+`, nmpName, target)
+			cmd = exec.Command("kubectl", "apply", "-f", "-")
+			cmd.Stdin = strings.NewReader(nmpYAML)
+			_, err = utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred())
+
+			By("waiting for DrainInProgress — eviction was issued and pod entered Terminating state")
+			Eventually(nmpCondition(nmpName, "DrainInProgress")).Should(Succeed())
+
+			By("verifying the pod has a DeletionTimestamp set by the eviction")
+			Eventually(func(g Gomega) {
+				cmd := exec.Command("kubectl", "get", "pod", podName, "-n", "default",
+					"-o", "jsonpath={.metadata.deletionTimestamp}")
+				output, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(strings.TrimSpace(output)).NotTo(BeEmpty())
+			}).Should(Succeed())
+
+			By("waiting for DrainBlocked — pod exceeds grace period + 60s stuck-terminating buffer")
+			// The operator classifies a pod as StuckTerminating once its DeletionTimestamp is
+			// older than terminationGracePeriodSeconds + 60s. Allow extra time for reconcile cycles.
+			Eventually(nmpCondition(nmpName, "DrainBlocked"), 3*time.Minute, 5*time.Second).Should(Succeed())
+
+			By("verifying DrainInProgress is False while the stuck pod blocks drain")
+			cmd = exec.Command("kubectl", "get", "nmp", nmpName,
+				"-o", `jsonpath={.status.conditions[?(@.type=="DrainInProgress")].status}`)
+			output, err := utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(output).To(Equal("False"))
+
+			By("verifying the node status contains a StuckTerminating issue referencing the stuck pod")
+			Eventually(func(g Gomega) {
+				cmd := exec.Command("kubectl", "get", "nmp", nmpName, "-o", "json")
+				output, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(output).To(ContainSubstring(`"StuckTerminating"`))
+				g.Expect(output).To(ContainSubstring(podName))
+			}).Should(Succeed())
+
+			By("verifying a DrainBlocked warning event is emitted for the stuck pod")
+			Eventually(func(g Gomega) {
+				cmd := exec.Command("kubectl", "get", "events", "-A",
+					"--field-selector", fmt.Sprintf("reason=DrainBlocked,involvedObject.name=%s", nmpName),
+					"-o", "name")
+				output, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(strings.TrimSpace(output)).NotTo(BeEmpty())
+			}).Should(Succeed())
+
+			By("removing the finalizer to allow the stuck pod to be deleted")
+			cmd = exec.Command("kubectl", "patch", "pod", podName, "-n", "default",
+				"--type=merge", "-p", `{"metadata":{"finalizers":[]}}`)
+			_, err = utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred())
+
+			By("waiting for DrainSucceeded once the stuck pod is gone")
+			Eventually(nmpCondition(nmpName, "DrainSucceeded"), 2*time.Minute, 5*time.Second).Should(Succeed())
+		})
+
 		It("should honour podTerminationGracePeriodSeconds by overriding the pod's own grace period", func() {
 			target := workerNodes[1]
 			nmpName := "e2e-grace-period"

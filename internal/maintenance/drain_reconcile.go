@@ -1,12 +1,7 @@
 // TODO(failure-modes): DrainTimedOut is currently the only terminal failure state.
-// Future work should consider:
-//   - A ConditionFailed condition set after N consecutive eviction errors, so a
-//     permanently broken eviction path (e.g. a mis-configured admission webhook)
-//     doesn't spin forever on exponential backoff.
-//   - Handling node disappearance mid-drain: ownership resolution already drops
-//     the node from res.Stable, but there is no explicit failure event.
-//   - A plan-level MaxRetries or ConsecutiveErrors counter to gate transitions
-//     to Failed without relying solely on wall-clock timeout.
+// Future work should consider handling node disappearance mid-drain: ownership
+// resolution already drops the node from res.Stable, but there is no explicit
+// failure event.
 
 package maintenance
 
@@ -30,8 +25,9 @@ const (
 	// the evicted pods to avoid unnecessary reconciles.
 	drainCheckInterval = 5 * time.Second
 
-	// drainBlockedRetry is the requeue interval when all nodes are blocked (PDB or
-	// config). Longer than drainCheckInterval since the block won't self-clear quickly.
+	// drainBlockedRetry is the requeue interval when all nodes are blocked (PDB,
+	// config, or stuck terminating). Longer than drainCheckInterval since the
+	// block won't self-clear quickly.
 	drainBlockedRetry = 15 * time.Second
 )
 
@@ -60,7 +56,6 @@ func (s *MaintenanceService) ReconcileDrain(ctx context.Context, plan *v1alpha1.
 		maxParallel = int(plan.Spec.Drain.Options.MaxParallel)
 	}
 
-	// Only drain nodes that are already cordoned — cordon must precede drain.
 	var nodesToDrain []*corev1.Node
 	for _, node := range res.Stable {
 		if node.Spec.Unschedulable {
@@ -87,8 +82,9 @@ func (s *MaintenanceService) applyDrainResults(ctx context.Context, plan *v1alph
 
 	for _, r := range results {
 		var blocked *drainBlockedError
+		stuckIssues := stuckTerminatingIssues(r.Outcome.StuckPods)
 		switch {
-		case r.Err == nil && r.Outcome.Evicted == 0 && r.Outcome.Terminating == 0:
+		case r.Err == nil && r.Outcome.Evicted == 0 && r.Outcome.Terminating == 0 && r.Outcome.StuckTerminating == 0:
 			// Node is fully drained — no evictable pods and all previous evictions have completed.
 			wasDraining := wasNodeDraining(original, r.NodeName)
 			updateNodeDrainStatus(plan, r.NodeName, r.Outcome, nil)
@@ -105,30 +101,40 @@ func (s *MaintenanceService) applyDrainResults(ctx context.Context, plan *v1alph
 			// Evictions fired this pass; pods are entering Terminating state.
 			allDone = false
 			evictionsInFlight = true
-			updateNodeDrainStatus(plan, r.NodeName, r.Outcome, nil)
+			updateNodeDrainStatus(plan, r.NodeName, r.Outcome, stuckIssues)
 			s.log.Info("evictions in progress", "node", r.NodeName, "evicted", r.Outcome.Evicted)
 
 		case r.Err == nil && r.Outcome.Terminating > 0:
 			// No new evictions needed; waiting for previously evicted pods to be removed.
 			allDone = false
 			evictionsInFlight = true
-			updateNodeDrainStatus(plan, r.NodeName, r.Outcome, nil)
+			updateNodeDrainStatus(plan, r.NodeName, r.Outcome, stuckIssues)
 			s.log.V(1).Info("waiting for pods to terminate", "node", r.NodeName, "terminating", r.Outcome.Terminating)
+
+		case r.Err == nil && r.Outcome.StuckTerminating > 0:
+			// All remaining pods are stuck in Terminating past their grace period.
+			allDone = false
+			anyBlocked = true
+			updateNodeDrainStatus(plan, r.NodeName, r.Outcome, stuckIssues)
+			s.log.Info("drain stuck: pods not terminating", "node", r.NodeName, "stuckPods", r.Outcome.StuckTerminating)
+			s.recorder.Eventf(plan, corev1.EventTypeWarning, "DrainBlocked",
+				"node %q: %d pod(s) stuck in Terminating beyond grace period", r.NodeName, r.Outcome.StuckTerminating)
 
 		case errors.As(r.Err, &blocked):
 			allDone = false
 			anyBlocked = true
-			issues := blockedPodIssues(blocked)
+			issues := append(blockedPodIssues(blocked), stuckIssues...)
 			updateNodeDrainStatus(plan, r.NodeName, r.Outcome, issues)
 			s.log.Info("drain blocked", "node", r.NodeName, "reason", blocked.Error())
-			s.recorder.Eventf(plan, "Warning", "DrainBlocked", "node %q: %s", r.NodeName, blocked.Error())
+			s.recorder.Eventf(plan, corev1.EventTypeWarning, "DrainBlocked",
+				"node %q: %s", r.NodeName, blocked.Error())
 
 		default:
-			// Unexpected error.
 			allDone = false
-			updateNodeDrainStatus(plan, r.NodeName, r.Outcome, nil)
+			updateNodeDrainStatus(plan, r.NodeName, r.Outcome, stuckIssues)
 			s.log.Error(r.Err, "drain error", "node", r.NodeName)
-			s.recorder.Eventf(plan, "Warning", "DrainFailed", "node %q: %v", r.NodeName, r.Err)
+			s.recorder.Eventf(plan, corev1.EventTypeWarning, "DrainError",
+				"node %q: %v", r.NodeName, r.Err)
 		}
 	}
 
@@ -251,17 +257,17 @@ func updateNodeDrainStatus(plan *v1alpha1.NodeMaintenancePlan, nodeName string, 
 		// to drain. It never resets so it stays valid as the denominator for
 		// progress even after pods finish terminating.
 		if ns.InitialPodCount == 0 && outcome.Total > 0 {
-			ns.InitialPodCount = int32(outcome.Total)
+			ns.InitialPodCount = outcome.Total
 		}
 
-		ns.TotalPods = int32(outcome.Total)
-		ns.EvictablePods = int32(outcome.Evictable)
-		ns.BlockedPods = int32(outcome.Total - outcome.Evictable)
-		ns.EvictedTotal += int32(outcome.Evicted)
+		ns.TotalPods = outcome.Total
+		ns.EvictablePods = outcome.Evictable
+		ns.BlockedPods = outcome.Total - outcome.Evictable
+		ns.EvictedTotal += outcome.Evicted
 		ns.Issues = issues
 
 		if ns.InitialPodCount > 0 {
-			remaining := min(int32(outcome.Total), ns.InitialPodCount)
+			remaining := min(outcome.Total, ns.InitialPodCount)
 			ns.DrainProgress = (ns.InitialPodCount - remaining) * 100 / ns.InitialPodCount
 		}
 
@@ -327,6 +333,23 @@ func blockedPodIssues(blocked *drainBlockedError) []v1alpha1.NodeIssue {
 		issues = append(issues, v1alpha1.NodeIssue{
 			Type:    issueType,
 			Message: msg,
+			PodRef:  &v1alpha1.PodReference{Namespace: pod.Namespace, Name: pod.Name},
+		})
+	}
+	return issues
+}
+
+// stuckTerminatingIssues builds NodeIssue entries for pods stuck in Terminating
+// state past their grace period.
+func stuckTerminatingIssues(pods []corev1.Pod) []v1alpha1.NodeIssue {
+	if len(pods) == 0 {
+		return nil
+	}
+	issues := make([]v1alpha1.NodeIssue, 0, len(pods))
+	for _, pod := range pods {
+		issues = append(issues, v1alpha1.NodeIssue{
+			Type:    "StuckTerminating",
+			Message: "pod has not terminated after exceeding its grace period",
 			PodRef:  &v1alpha1.PodReference{Namespace: pod.Namespace, Name: pod.Name},
 		})
 	}
