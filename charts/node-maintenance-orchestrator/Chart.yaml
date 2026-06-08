@@ -16,3 +16,16 @@ sources:
 maintainers:
   - name: Nils Svensson
     url: https://github.com/Nils-Svensson
+annotations:
+  artifacthub.io/readme: https://raw.githubusercontent.com/Nils-Svensson/node-maintenance-orchestrator/main/README.md
+  artifacthub.io/operator: "true"
+  artifacthub.io/operatorCapabilities: Basic Install
+  artifacthub.io/license: Apache-2.0
+  artifacthub.io/images: |
+    - name: node-maintenance-orchestrator
+      image: ghcr.io/nils-svensson/node-maintenance-orchestrator:latest
+  artifacthub.io/changes: |
+    - kind: added
+      description: In-maintenance node label (maintenance.nmoo.io/in-maintenance) set on adoption, removed on release
+    - kind: added
+      description: Stuck-terminating pod detection with DrainBlocked condition and NodeIssue entries
