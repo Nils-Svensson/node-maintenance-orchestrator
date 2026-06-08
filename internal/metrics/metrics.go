@@ -6,43 +6,48 @@ import (
 	ctrlmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
 )
 
+const (
+	labelPlan = "plan"
+	labelNode = "node"
+)
+
 // allPhases lists every phase value computePhase can return, so we can
 // zero out stale phase entries when a plan transitions to a new phase.
 var allPhases = []string{
-	"Pending", "Adopted", "Scheduled", "Cordoned",
-	"Draining", "Blocked", "Ready", "TimedOut", "Conflict",
+	v1alpha1.PhasePending, v1alpha1.PhaseAdopted, v1alpha1.PhaseScheduled, v1alpha1.PhaseCordoned,
+	v1alpha1.PhaseDraining, v1alpha1.PhaseBlocked, v1alpha1.PhaseReady, v1alpha1.PhaseTimedOut, v1alpha1.PhaseConflict,
 }
 
 var (
 	planManagedNodes = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "nmo_plan_managed_nodes_total",
 		Help: "Total number of nodes currently under management by the plan.",
-	}, []string{"plan"})
+	}, []string{labelPlan})
 
 	planReadyNodes = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "nmo_plan_ready_nodes_total",
 		Help: "Number of nodes that have reached ReadyForMaintenance.",
-	}, []string{"plan"})
+	}, []string{labelPlan})
 
 	planDrainingNodes = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "nmo_plan_draining_nodes_total",
 		Help: "Number of nodes currently being drained.",
-	}, []string{"plan"})
+	}, []string{labelPlan})
 
 	planBlockedNodes = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "nmo_plan_blocked_nodes_total",
 		Help: "Number of nodes with at least one pod blocking drain.",
-	}, []string{"plan"})
+	}, []string{labelPlan})
 
 	planDriftedNodes = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "nmo_plan_drifted_nodes_total",
 		Help: "Number of nodes that have drifted from the desired cordon state.",
-	}, []string{"plan"})
+	}, []string{labelPlan})
 
 	planDrainProgress = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "nmo_plan_drain_progress",
 		Help: "Average drain completion ratio across all managed nodes (0–1).",
-	}, []string{"plan"})
+	}, []string{labelPlan})
 
 	// planPhase uses the label-per-state pattern: 1 for the active phase, 0 for
 	// all others. This lets alerting rules select on the phase label directly,
@@ -50,22 +55,22 @@ var (
 	planPhase = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "nmo_plan_phase",
 		Help: "Current lifecycle phase of the plan. 1 for the active phase, 0 for all others.",
-	}, []string{"plan", "phase"})
+	}, []string{labelPlan, "phase"})
 
 	nodeDrainProgress = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "nmo_node_drain_progress",
 		Help: "Per-node drain completion ratio (0–1).",
-	}, []string{"plan", "node"})
+	}, []string{labelPlan, labelNode})
 
 	nodeEvictedTotal = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "nmo_node_evicted_pods_total",
 		Help: "Cumulative number of pods evicted from the node by this plan.",
-	}, []string{"plan", "node"})
+	}, []string{labelPlan, labelNode})
 
 	nodeBlockedPods = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "nmo_node_blocked_pods",
 		Help: "Number of pods currently blocking drain on this node.",
-	}, []string{"plan", "node"})
+	}, []string{labelPlan, labelNode})
 )
 
 func init() {

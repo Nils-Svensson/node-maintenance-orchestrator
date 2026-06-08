@@ -60,23 +60,23 @@ func recomputePlanSummaries(plan *v1alpha1.NodeMaintenancePlan) {
 func computePhase(plan *v1alpha1.NodeMaintenancePlan) string {
 	switch {
 	case isConditionTrue(plan, v1alpha1.ConditionDrainTimedOut):
-		return "TimedOut"
+		return v1alpha1.PhaseTimedOut
 	case isConditionTrue(plan, v1alpha1.ConditionConflict):
-		return "Conflict"
+		return v1alpha1.PhaseConflict
 	case plan.Status.AllNodesReadyForMaintenance:
-		return "Ready"
+		return v1alpha1.PhaseReady
 	case isConditionTrue(plan, v1alpha1.ConditionDrainBlocked):
-		return "Blocked"
+		return v1alpha1.PhaseBlocked
 	case isConditionTrue(plan, v1alpha1.ConditionDrainInProgress):
-		return "Draining"
+		return v1alpha1.PhaseDraining
 	case isConditionTrue(plan, v1alpha1.ConditionCordoned):
-		return "Cordoned"
+		return v1alpha1.PhaseCordoned
 	case isConditionTrue(plan, v1alpha1.ConditionScheduled):
-		return "Scheduled"
+		return v1alpha1.PhaseScheduled
 	case isConditionTrue(plan, v1alpha1.ConditionNodesSelected):
-		return "Adopted"
+		return v1alpha1.PhaseAdopted
 	default:
-		return "Pending"
+		return v1alpha1.PhasePending
 	}
 }
 

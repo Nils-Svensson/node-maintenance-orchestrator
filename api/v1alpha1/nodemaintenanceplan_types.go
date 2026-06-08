@@ -31,6 +31,22 @@ const NodeMaintenancePlanFinalizer string = "maintenance.nmoo.io/finalizer"
 // CONDITION TYPES
 //
 
+//
+// PHASE VALUES
+//
+
+const (
+	PhasePending   = "Pending"
+	PhaseAdopted   = "Adopted"
+	PhaseScheduled = "Scheduled"
+	PhaseCordoned  = "Cordoned"
+	PhaseDraining  = "Draining"
+	PhaseBlocked   = "Blocked"
+	PhaseReady     = "Ready"
+	PhaseTimedOut  = "TimedOut"
+	PhaseConflict  = "Conflict"
+)
+
 const (
 	ConditionNodesSelected   = "NodesSelected"
 	ConditionScheduled       = "Scheduled"
