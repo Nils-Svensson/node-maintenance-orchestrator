@@ -17,7 +17,6 @@ maintainers:
   - name: Nils Svensson
     url: https://github.com/Nils-Svensson
 annotations:
-  artifacthub.io/readme: https://raw.githubusercontent.com/Nils-Svensson/node-maintenance-orchestrator/main/README.md
   artifacthub.io/operator: "true"
   artifacthub.io/operatorCapabilities: Basic Install
   artifacthub.io/license: Apache-2.0
