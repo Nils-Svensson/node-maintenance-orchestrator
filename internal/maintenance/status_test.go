@@ -61,6 +61,13 @@ func TestComputePhase(t *testing.T) {
 			setup:     []func(*v1alpha1.NodeMaintenancePlan){cond(v1alpha1.ConditionDrainInProgress), cond(v1alpha1.ConditionCordoned)},
 			wantPhase: "Draining",
 		},
+		// NodeNotReady alone (drain=false scenario) does not change the phase —
+		// the condition surfaces the issue without overriding the plan-wide phase.
+		{
+			name:      "NodeNotReady alone does not change phase",
+			setup:     []func(*v1alpha1.NodeMaintenancePlan){cond(v1alpha1.ConditionNodesSelected), cond(v1alpha1.ConditionNodeNotReady)},
+			wantPhase: "Adopted",
+		},
 	}
 
 	for _, tt := range tests {

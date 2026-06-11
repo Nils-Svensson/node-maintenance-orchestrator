@@ -16,6 +16,9 @@ type MaintenanceService struct {
 }
 
 func NewMaintenanceService(c client.Client, log logr.Logger, recorder record.EventRecorder, clk clock.Clock) *MaintenanceService {
+	if clk == nil {
+		clk = clock.RealClock{}
+	}
 	return &MaintenanceService{
 		client:   c,
 		log:      log.WithName("MaintenanceService"),

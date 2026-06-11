@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -90,6 +91,32 @@ func (s *MaintenanceService) UpdateStatus(ctx context.Context, plan *v1alpha1.No
 		existing[ns.Name] = ns
 	}
 
+	// Detect nodes that were mid-drain in the previous reconcile but are now absent
+	// from res.All and res.ToRelease. Nodes in ToRelease were intentionally removed
+	// from the plan spec; nodes absent from both disappeared from the cluster.
+	resAllNames := make(map[string]struct{}, len(res.All))
+	for _, n := range res.All {
+		resAllNames[n.Name] = struct{}{}
+	}
+	resToReleaseNames := make(map[string]struct{}, len(res.ToRelease))
+	for _, n := range res.ToRelease {
+		resToReleaseNames[n.Name] = struct{}{}
+	}
+	for _, ns := range existing {
+		if _, inAll := resAllNames[ns.Name]; inAll {
+			continue
+		}
+		if _, inRelease := resToReleaseNames[ns.Name]; inRelease {
+			continue
+		}
+		if ns.InitialPodCount > 0 && ns.DrainProgress < 100 {
+			s.log.Info("node disappeared from cluster mid-drain", "node", ns.Name)
+			s.recorder.Eventf(plan, corev1.EventTypeWarning, "NodeDisappeared",
+				"node %q disappeared from the cluster while drain was in progress", ns.Name)
+		}
+	}
+
+	now := metav1.NewTime(s.clock.Now())
 	statuses := make([]v1alpha1.NodeStatus, 0, len(res.All))
 
 	for _, node := range res.All {
@@ -117,6 +144,17 @@ func (s *MaintenanceService) UpdateStatus(ctx context.Context, plan *v1alpha1.No
 		ns.Cordoned = node.Spec.Unschedulable
 		ns.Drifted = drifted
 		ns.DriftReason = reason
+
+		// Track NotReadySince: set when first observed NotReady, clear on recovery.
+		// Resetting on every recovery ensures short flips don't accumulate toward
+		// the threshold prematurely.
+		if !isNodeReady(node) {
+			if ns.NotReadySince == nil {
+				ns.NotReadySince = &now
+			}
+		} else {
+			ns.NotReadySince = nil
+		}
 
 		statuses = append(statuses, ns)
 	}
@@ -198,6 +236,31 @@ func (s *MaintenanceService) UpdateStatus(ctx context.Context, plan *v1alpha1.No
 	} else {
 		setCondition(plan, v1alpha1.ConditionDriftDetected, metav1.ConditionFalse,
 			"NoDrift", "No managed nodes have drifted")
+	}
+
+	// NodeNotReady — one or more managed nodes have been NotReady beyond the threshold.
+	// When drain is enabled, ReconcileDrain owns the "yielding" event; here we only
+	// emit a warning on the drain=false path so the operator is never silent about a
+	// node that Kubernetes has been silently draining for >300s.
+	drainEnabled := plan.Spec.Drain != nil && plan.Spec.Drain.Enabled
+	var notReadyNames []string
+	for _, ns := range statuses {
+		if ns.NotReadySince != nil && s.clock.Since(ns.NotReadySince.Time) >= nodeNotReadyThreshold {
+			notReadyNames = append(notReadyNames, ns.Name)
+			if !drainEnabled {
+				s.recorder.Eventf(plan, corev1.EventTypeWarning, "NodeNotReady",
+					"node %q has been NotReady for >%ds; Kubernetes node lifecycle controller is managing pod eviction",
+					ns.Name, int(nodeNotReadyThreshold.Seconds()))
+			}
+		}
+	}
+	if len(notReadyNames) > 0 {
+		setCondition(plan, v1alpha1.ConditionNodeNotReady, metav1.ConditionTrue,
+			"NodeNotReady", fmt.Sprintf("%d node(s) NotReady beyond threshold: %s",
+				len(notReadyNames), strings.Join(notReadyNames, ", ")))
+	} else {
+		setCondition(plan, v1alpha1.ConditionNodeNotReady, metav1.ConditionFalse,
+			"AllNodesReady", "All managed nodes are healthy")
 	}
 
 	recomputePlanSummaries(plan)

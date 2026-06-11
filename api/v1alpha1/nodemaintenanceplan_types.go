@@ -51,6 +51,7 @@ const (
 	ConditionNodesSelected   = "NodesSelected"
 	ConditionScheduled       = "Scheduled"
 	ConditionCordoned        = "Cordoned"
+	ConditionNodeNotReady    = "NodeNotReady"
 	ConditionDrainInProgress = "DrainInProgress"
 	ConditionDrainSucceeded  = "DrainSucceeded"
 	ConditionDrainBlocked    = "DrainBlocked"
@@ -242,6 +243,13 @@ type NodeStatus struct {
 	// Issues detected during drain execution.
 	// +optional
 	Issues []NodeIssue `json:"issues,omitempty"`
+
+	// NotReadySince is the timestamp when the node first became NotReady during this
+	// maintenance plan. Cleared when the node recovers. Used to distinguish transient
+	// NotReady states from sustained failures that warrant yielding to the Kubernetes
+	// node lifecycle controller.
+	// +optional
+	NotReadySince *metav1.Time `json:"notReadySince,omitempty"`
 
 	// True when adpoted+cordoned+drained are all satisfied. I should figure out if adpoted
 	// + drained, with cordon enabled=false is a valid state that should be considered ready for maintenance.

@@ -56,18 +56,38 @@ func (s *MaintenanceService) ReconcileDrain(ctx context.Context, plan *v1alpha1.
 		maxParallel = int(plan.Spec.Drain.Options.MaxParallel)
 	}
 
-	var nodesToDrain []*corev1.Node
-	for _, node := range res.Stable {
-		if node.Spec.Unschedulable {
-			nodesToDrain = append(nodesToDrain, node)
+	// Build a lookup of NotReadySince timestamps from status (populated by UpdateStatus
+	// earlier in the same reconcile pass) so the pre-pass below can check the threshold
+	// without re-reading the API.
+	notReadySince := make(map[string]*metav1.Time, len(plan.Status.Nodes))
+	for i := range plan.Status.Nodes {
+		ns := &plan.Status.Nodes[i]
+		if ns.NotReadySince != nil {
+			notReadySince[ns.Name] = ns.NotReadySince
 		}
 	}
 
-	if len(nodesToDrain) == 0 {
+	var nodesToDrain []*corev1.Node
+	var results []drainNodeResult
+	for _, node := range res.Stable {
+		if !node.Spec.Unschedulable {
+			continue
+		}
+		if !isNodeReady(node) {
+			results = append(results, drainNodeResult{
+				NodeName: node.Name,
+				Err:      &nodeNotReadyError{node: node.Name, notReadySince: notReadySince[node.Name]},
+			})
+			continue
+		}
+		nodesToDrain = append(nodesToDrain, node)
+	}
+
+	if len(nodesToDrain) == 0 && len(results) == 0 {
 		return 0, nil
 	}
 
-	results := s.drainNodes(ctx, plan, nodesToDrain, maxParallel)
+	results = append(results, s.drainNodes(ctx, plan, nodesToDrain, maxParallel)...)
 	return s.applyDrainResults(ctx, plan, results)
 }
 
@@ -82,6 +102,7 @@ func (s *MaintenanceService) applyDrainResults(ctx context.Context, plan *v1alph
 
 	for _, r := range results {
 		var blocked *drainBlockedError
+		var notReady *nodeNotReadyError
 		stuckIssues := stuckTerminatingIssues(r.Outcome.StuckPods)
 		switch {
 		case r.Err == nil && r.Outcome.Evicted == 0 && r.Outcome.Terminating == 0 && r.Outcome.StuckTerminating == 0:
@@ -119,6 +140,22 @@ func (s *MaintenanceService) applyDrainResults(ctx context.Context, plan *v1alph
 			s.log.Info("drain stuck: pods not terminating", "node", r.NodeName, "stuckPods", r.Outcome.StuckTerminating)
 			s.recorder.Eventf(plan, corev1.EventTypeWarning, "DrainBlocked",
 				"node %q: %d pod(s) stuck in Terminating beyond grace period", r.NodeName, r.Outcome.StuckTerminating)
+
+		case errors.As(r.Err, &notReady):
+			allDone = false
+			anyBlocked = true
+			yielded := notReady.notReadySince != nil &&
+				s.clock.Since(notReady.notReadySince.Time) >= nodeNotReadyThreshold
+			setNodeIssues(plan, r.NodeName, []v1alpha1.NodeIssue{nodeNotReadyIssue(yielded)})
+			if yielded {
+				s.log.Info("node NotReady beyond threshold, yielding to node lifecycle controller",
+					"node", r.NodeName, "notReadySince", notReady.notReadySince)
+				s.recorder.Eventf(plan, corev1.EventTypeWarning, "NodeNotReady",
+					"node %q has been NotReady for >%ds; yielding drain to Kubernetes node lifecycle controller",
+					r.NodeName, int(nodeNotReadyThreshold.Seconds()))
+			} else {
+				s.log.V(1).Info("node NotReady, skipping drain pass", "node", r.NodeName)
+			}
 
 		case errors.As(r.Err, &blocked):
 			allDone = false
@@ -272,6 +309,18 @@ func updateNodeDrainStatus(plan *v1alpha1.NodeMaintenancePlan, nodeName string, 
 		}
 
 		return
+	}
+}
+
+// setNodeIssues updates only the Issues field on a NodeStatus entry, leaving all
+// drain counters and progress unchanged. Used when NMO has no new outcome data
+// (e.g. NotReady nodes where drain is skipped).
+func setNodeIssues(plan *v1alpha1.NodeMaintenancePlan, nodeName string, issues []v1alpha1.NodeIssue) {
+	for i := range plan.Status.Nodes {
+		if plan.Status.Nodes[i].Name == nodeName {
+			plan.Status.Nodes[i].Issues = issues
+			return
+		}
 	}
 }
 

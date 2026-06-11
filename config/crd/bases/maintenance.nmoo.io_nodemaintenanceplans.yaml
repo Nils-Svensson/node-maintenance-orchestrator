@@ -407,6 +407,14 @@ spec:
                       type: array
                     name:
                       type: string
+                    notReadySince:
+                      description: |-
+                        NotReadySince is the timestamp when the node first became NotReady during this
+                        maintenance plan. Cleared when the node recovers. Used to distinguish transient
+                        NotReady states from sustained failures that warrant yielding to the Kubernetes
+                        node lifecycle controller.
+                      format: date-time
+                      type: string
                     readyForMaintenance:
                       description: True when adpoted+cordoned+drained are all satisfied.
                         I should figure out if adpoted

@@ -73,7 +73,26 @@ func nodeRelevantChange(old, new *corev1.Node) bool {
 		return true
 	}
 
+	// Ready condition change on a managed node — triggers NotReady tracking and
+	// yield logic in ReconcileDrain.
+	if (isManagedByOperator(old) || isManagedByOperator(new)) && nodeReadyConditionChanged(old, new) {
+		return true
+	}
+
 	return false
+}
+
+func nodeReadyConditionChanged(old, new *corev1.Node) bool {
+	return getNodeReadyStatus(old) != getNodeReadyStatus(new)
+}
+
+func getNodeReadyStatus(node *corev1.Node) corev1.ConditionStatus {
+	for _, c := range node.Status.Conditions {
+		if c.Type == corev1.NodeReady {
+			return c.Status
+		}
+	}
+	return corev1.ConditionUnknown
 }
 
 func isManagedByOperator(node *corev1.Node) bool {
