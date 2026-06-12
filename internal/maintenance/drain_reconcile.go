@@ -19,6 +19,11 @@ import (
 )
 
 const (
+	// noRequeue signals that the reconciler should not schedule an explicit requeue.
+	// Used on error returns (controller-runtime retries via rate-limited backoff) and
+	// on terminal/idle paths where the next reconcile is event-driven.
+	noRequeue time.Duration = 0
+
 	// drainCheckInterval is how soon the reconciler re-checks after evictions are
 	// fired, to detect when terminating pods have been removed.
 	// TODO: make dynamic based on the minimum terminationGracePeriodSeconds across
@@ -43,12 +48,12 @@ type drainNodeResult struct {
 func (s *MaintenanceService) ReconcileDrain(ctx context.Context, plan *v1alpha1.NodeMaintenancePlan, res *OwnershipResolution) (time.Duration, error) {
 	cfg := getDrainConfig(plan)
 	if cfg == nil {
-		return 0, nil
+		return noRequeue, nil
 	}
 
 	if isConditionTrue(plan, v1alpha1.ConditionDrainTimedOut) {
 		s.log.V(1).Info("drain timed out, skipping", "plan", plan.Name)
-		return 0, nil
+		return noRequeue, nil
 	}
 
 	maxParallel := 1
@@ -84,7 +89,7 @@ func (s *MaintenanceService) ReconcileDrain(ctx context.Context, plan *v1alpha1.
 	}
 
 	if len(nodesToDrain) == 0 && len(results) == 0 {
-		return 0, nil
+		return noRequeue, nil
 	}
 
 	results = append(results, s.drainNodes(ctx, plan, nodesToDrain, maxParallel)...)
@@ -193,43 +198,14 @@ func (s *MaintenanceService) applyDrainResults(ctx context.Context, plan *v1alph
 				s.recorder.Eventf(plan, corev1.EventTypeWarning, "DrainTimedOut",
 					"drain deadline of %d minute(s) exceeded", *plan.Spec.Drain.TimeoutMinutes)
 				if err := s.client.Status().Patch(ctx, plan, client.MergeFrom(original)); err != nil {
-					return 0, fmt.Errorf("patching drain timeout status: %w", err)
+					return noRequeue, fmt.Errorf("patching drain timeout status: %w", err)
 				}
-				return 0, nil
+				return noRequeue, nil
 			}
 		}
 	}
 
-	// Set conditions reflecting the aggregate drain state.
-	if allDone {
-		setCondition(plan, v1alpha1.ConditionDrainSucceeded, metav1.ConditionTrue,
-			"AllPodsEvicted", "All target pods have been evicted and removed from the nodes")
-		setCondition(plan, v1alpha1.ConditionDrainInProgress, metav1.ConditionFalse,
-			"Idle", "Drain is not in progress")
-		setCondition(plan, v1alpha1.ConditionDrainBlocked, metav1.ConditionFalse,
-			"Cleared", "No blocking issues")
-	} else if anyBlocked && !evictionsInFlight {
-		// All nodes blocked, none making progress — user action likely required.
-		setCondition(plan, v1alpha1.ConditionDrainBlocked, metav1.ConditionTrue,
-			"PodBlocked", "One or more pods cannot be evicted")
-		setCondition(plan, v1alpha1.ConditionDrainInProgress, metav1.ConditionFalse,
-			"Blocked", "Drain is blocked and not making progress")
-		setCondition(plan, v1alpha1.ConditionDrainSucceeded, metav1.ConditionFalse,
-			"Blocked", "Drain has not succeeded yet")
-	} else {
-		// Evictions in progress, possibly with some blocks too.
-		setCondition(plan, v1alpha1.ConditionDrainInProgress, metav1.ConditionTrue,
-			"Evicting", "Pod evictions in progress")
-		setCondition(plan, v1alpha1.ConditionDrainSucceeded, metav1.ConditionFalse,
-			"InProgress", "Drain has not succeeded yet")
-		if anyBlocked {
-			setCondition(plan, v1alpha1.ConditionDrainBlocked, metav1.ConditionTrue,
-				"PDBBlocked", "One or more pods are blocked by PodDisruptionBudgets")
-		} else {
-			setCondition(plan, v1alpha1.ConditionDrainBlocked, metav1.ConditionFalse,
-				"Cleared", "No blocking issues")
-		}
-	}
+	setDrainConditions(plan, allDone, anyBlocked, evictionsInFlight)
 
 	// Recompute plan-level ReadyForMaintenance aggregate and fire a one-time event
 	// on the transition from false → true.
@@ -244,16 +220,51 @@ func (s *MaintenanceService) applyDrainResults(ctx context.Context, plan *v1alph
 	recomputePlanSummaries(plan)
 
 	if err := s.client.Status().Patch(ctx, plan, client.MergeFrom(original)); err != nil {
-		return 0, fmt.Errorf("patching drain status: %w", err)
+		return noRequeue, fmt.Errorf("patching drain status: %w", err)
 	}
 
 	if allDone {
-		return 0, nil
+		return noRequeue, nil
 	}
 	if evictionsInFlight {
 		return drainCheckInterval, nil
 	}
 	return drainBlockedRetry, nil
+}
+
+// setDrainConditions updates the three drain conditions — DrainSucceeded,
+// DrainInProgress, DrainBlocked — from the aggregate result of a reconcile pass.
+func setDrainConditions(plan *v1alpha1.NodeMaintenancePlan, allDone, anyBlocked, evictionsInFlight bool) {
+	switch {
+	case allDone:
+		setCondition(plan, v1alpha1.ConditionDrainSucceeded, metav1.ConditionTrue,
+			"AllPodsEvicted", "All target pods have been evicted and removed from the nodes")
+		setCondition(plan, v1alpha1.ConditionDrainInProgress, metav1.ConditionFalse,
+			"Idle", "Drain is not in progress")
+		setCondition(plan, v1alpha1.ConditionDrainBlocked, metav1.ConditionFalse,
+			"Cleared", "No blocking issues")
+	case anyBlocked && !evictionsInFlight:
+		// All nodes blocked, none making progress — user action likely required.
+		setCondition(plan, v1alpha1.ConditionDrainBlocked, metav1.ConditionTrue,
+			"PodBlocked", "One or more pods cannot be evicted")
+		setCondition(plan, v1alpha1.ConditionDrainInProgress, metav1.ConditionFalse,
+			"Blocked", "Drain is blocked and not making progress")
+		setCondition(plan, v1alpha1.ConditionDrainSucceeded, metav1.ConditionFalse,
+			"Blocked", "Drain has not succeeded yet")
+	default:
+		// Evictions in progress, possibly with some blocks too.
+		setCondition(plan, v1alpha1.ConditionDrainInProgress, metav1.ConditionTrue,
+			"Evicting", "Pod evictions in progress")
+		setCondition(plan, v1alpha1.ConditionDrainSucceeded, metav1.ConditionFalse,
+			"InProgress", "Drain has not succeeded yet")
+		if anyBlocked {
+			setCondition(plan, v1alpha1.ConditionDrainBlocked, metav1.ConditionTrue,
+				"PDBBlocked", "One or more pods are blocked by PodDisruptionBudgets")
+		} else {
+			setCondition(plan, v1alpha1.ConditionDrainBlocked, metav1.ConditionFalse,
+				"Cleared", "No blocking issues")
+		}
+	}
 }
 
 // drainNodes fans out drainNode calls across nodes with maxParallel concurrency.

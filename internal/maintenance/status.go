@@ -238,10 +238,27 @@ func (s *MaintenanceService) UpdateStatus(ctx context.Context, plan *v1alpha1.No
 			"NoDrift", "No managed nodes have drifted")
 	}
 
-	// NodeNotReady — one or more managed nodes have been NotReady beyond the threshold.
-	// When drain is enabled, ReconcileDrain owns the "yielding" event; here we only
-	// emit a warning on the drain=false path so the operator is never silent about a
-	// node that Kubernetes has been silently draining for >300s.
+	s.setNodeNotReadyCondition(plan, statuses)
+
+	recomputePlanSummaries(plan)
+
+	if res.SnapshotNodes != nil {
+		plan.Status.ResolvedNodes = res.SnapshotNodes
+		plan.Status.NodeSnapshotTaken = true
+	}
+
+	return s.client.Status().Patch(
+		ctx,
+		plan,
+		client.MergeFrom(original),
+	)
+}
+
+// setNodeNotReadyCondition sets the NodeNotReady condition and, when drain is not
+// enabled, emits a warning event for any managed node that has been NotReady beyond
+// the threshold. When drain IS enabled, ReconcileDrain owns the "yielding" event so
+// we skip it here to avoid duplicates.
+func (s *MaintenanceService) setNodeNotReadyCondition(plan *v1alpha1.NodeMaintenancePlan, statuses []v1alpha1.NodeStatus) {
 	drainEnabled := plan.Spec.Drain != nil && plan.Spec.Drain.Enabled
 	var notReadyNames []string
 	for _, ns := range statuses {
@@ -262,17 +279,4 @@ func (s *MaintenanceService) UpdateStatus(ctx context.Context, plan *v1alpha1.No
 		setCondition(plan, v1alpha1.ConditionNodeNotReady, metav1.ConditionFalse,
 			"AllNodesReady", "All managed nodes are healthy")
 	}
-
-	recomputePlanSummaries(plan)
-
-	if res.SnapshotNodes != nil {
-		plan.Status.ResolvedNodes = res.SnapshotNodes
-		plan.Status.NodeSnapshotTaken = true
-	}
-
-	return s.client.Status().Patch(
-		ctx,
-		plan,
-		client.MergeFrom(original),
-	)
 }

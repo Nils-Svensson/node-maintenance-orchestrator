@@ -33,16 +33,6 @@ func nodeNotReadyIssue(yielded bool) v1alpha1.NodeIssue {
 	return v1alpha1.NodeIssue{Type: "NodeNotReady", Message: msg}
 }
 
-// nodeDisappearedIssue returns a NodeIssue for a node that vanished from the
-// cluster mid-drain. The issue is persisted in the final status snapshot so
-// the history is not lost when the node entry is eventually cleaned up.
-func nodeDisappearedIssue() v1alpha1.NodeIssue {
-	return v1alpha1.NodeIssue{
-		Type:    "NodeDisappeared",
-		Message: "node disappeared from the cluster mid-drain; workloads may not have been cleanly evicted",
-	}
-}
-
 // nodeNotReadyError is returned as a synthetic drainNodeResult error when a node
 // is NotReady during drain. It carries a copy of the NotReadySince timestamp so
 // applyDrainResults can decide whether the threshold has been crossed.

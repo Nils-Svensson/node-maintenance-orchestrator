@@ -1427,7 +1427,7 @@ spec:
         lifecycle:
           preStop:
             exec:
-              command: ["sleep", "70"]
+              command: ["sleep", "60"]
 `, deployName, deployName, deployName, target)
 			cmd := exec.Command("kubectl", "apply", "-f", "-")
 			cmd.Stdin = strings.NewReader(deployYAML)
