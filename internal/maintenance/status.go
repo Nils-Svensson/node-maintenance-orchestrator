@@ -91,73 +91,10 @@ func (s *MaintenanceService) UpdateStatus(ctx context.Context, plan *v1alpha1.No
 		existing[ns.Name] = ns
 	}
 
-	// Detect nodes that were mid-drain in the previous reconcile but are now absent
-	// from res.All and res.ToRelease. Nodes in ToRelease were intentionally removed
-	// from the plan spec; nodes absent from both disappeared from the cluster.
-	resAllNames := make(map[string]struct{}, len(res.All))
-	for _, n := range res.All {
-		resAllNames[n.Name] = struct{}{}
-	}
-	resToReleaseNames := make(map[string]struct{}, len(res.ToRelease))
-	for _, n := range res.ToRelease {
-		resToReleaseNames[n.Name] = struct{}{}
-	}
-	for _, ns := range existing {
-		if _, inAll := resAllNames[ns.Name]; inAll {
-			continue
-		}
-		if _, inRelease := resToReleaseNames[ns.Name]; inRelease {
-			continue
-		}
-		if ns.InitialPodCount > 0 && ns.DrainProgress < 100 {
-			s.log.Info("node disappeared from cluster mid-drain", "node", ns.Name)
-			s.recorder.Eventf(plan, corev1.EventTypeWarning, "NodeDisappeared",
-				"node %q disappeared from the cluster while drain was in progress", ns.Name)
-		}
-	}
+	s.warnDisappearedNodes(plan, existing, res)
 
 	now := metav1.NewTime(s.clock.Now())
-	statuses := make([]v1alpha1.NodeStatus, 0, len(res.All))
-
-	for _, node := range res.All {
-
-		drifted, reason := DetectNodeDrift(node, plan)
-
-		// If not currently detectable (annotation already removed by a prior
-		// ReconcileDrift), carry forward the drift state from the previous status
-		// so the node remains marked drifted until removed from the spec.
-		if !drifted {
-			drifted, reason = GetNodeDriftState(plan, node.Name)
-		}
-
-		// MaintenanceComplete is an expected lifecycle transition, not a drift
-		// condition. Don't persist it as Drifted in status.
-		if reason == DriftReasonMaintenanceComplete {
-			drifted = false
-			reason = ""
-		}
-
-		// Start from the previous entry so drain counters are preserved, then
-		// overwrite only the fields this function is responsible for.
-		ns := existing[node.Name]
-		ns.Name = node.Name
-		ns.Cordoned = node.Spec.Unschedulable
-		ns.Drifted = drifted
-		ns.DriftReason = reason
-
-		// Track NotReadySince: set when first observed NotReady, clear on recovery.
-		// Resetting on every recovery ensures short flips don't accumulate toward
-		// the threshold prematurely.
-		if !isNodeReady(node) {
-			if ns.NotReadySince == nil {
-				ns.NotReadySince = &now
-			}
-		} else {
-			ns.NotReadySince = nil
-		}
-
-		statuses = append(statuses, ns)
-	}
+	statuses := buildNodeStatuses(existing, res.All, plan, now)
 
 	original := plan.DeepCopy()
 
@@ -252,6 +189,67 @@ func (s *MaintenanceService) UpdateStatus(ctx context.Context, plan *v1alpha1.No
 		plan,
 		client.MergeFrom(original),
 	)
+}
+
+// warnDisappearedNodes emits a warning event for any node that was mid-drain in the
+// previous reconcile but is now absent from both res.All and res.ToRelease.
+func (s *MaintenanceService) warnDisappearedNodes(plan *v1alpha1.NodeMaintenancePlan, existing map[string]v1alpha1.NodeStatus, res *OwnershipResolution) {
+	resAllNames := make(map[string]struct{}, len(res.All))
+	for _, n := range res.All {
+		resAllNames[n.Name] = struct{}{}
+	}
+	resToReleaseNames := make(map[string]struct{}, len(res.ToRelease))
+	for _, n := range res.ToRelease {
+		resToReleaseNames[n.Name] = struct{}{}
+	}
+	for _, ns := range existing {
+		if _, inAll := resAllNames[ns.Name]; inAll {
+			continue
+		}
+		if _, inRelease := resToReleaseNames[ns.Name]; inRelease {
+			continue
+		}
+		if ns.InitialPodCount > 0 && ns.DrainProgress < 100 {
+			s.log.Info("node disappeared from cluster mid-drain", "node", ns.Name)
+			s.recorder.Eventf(plan, corev1.EventTypeWarning, "NodeDisappeared",
+				"node %q disappeared from the cluster while drain was in progress", ns.Name)
+		}
+	}
+}
+
+// buildNodeStatuses constructs the per-node status slice from the current node list.
+// It preserves drain counters from existing by starting from the previous entry and
+// overwriting only the fields UpdateStatus is responsible for.
+func buildNodeStatuses(existing map[string]v1alpha1.NodeStatus, nodes []*corev1.Node, plan *v1alpha1.NodeMaintenancePlan, now metav1.Time) []v1alpha1.NodeStatus {
+	statuses := make([]v1alpha1.NodeStatus, 0, len(nodes))
+	for _, node := range nodes {
+		drifted, reason := DetectNodeDrift(node, plan)
+		if !drifted {
+			drifted, reason = GetNodeDriftState(plan, node.Name)
+		}
+		// MaintenanceComplete is an expected lifecycle transition, not a drift condition.
+		if reason == DriftReasonMaintenanceComplete {
+			drifted = false
+			reason = ""
+		}
+		ns := existing[node.Name]
+		ns.Name = node.Name
+		ns.Cordoned = node.Spec.Unschedulable
+		ns.Drifted = drifted
+		ns.DriftReason = reason
+		// Track NotReadySince: set when first observed NotReady, clear on recovery.
+		// Resetting on every recovery ensures short flips don't accumulate toward
+		// the threshold prematurely.
+		if !isNodeReady(node) {
+			if ns.NotReadySince == nil {
+				ns.NotReadySince = &now
+			}
+		} else {
+			ns.NotReadySince = nil
+		}
+		statuses = append(statuses, ns)
+	}
+	return statuses
 }
 
 // setNodeNotReadyCondition sets the NodeNotReady condition and, when drain is not
