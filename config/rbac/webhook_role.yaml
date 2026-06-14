@@ -1,0 +1,51 @@
+---
+# Permissions required for the operator's self-signed cert bootstrapper.
+# Scoped to the specific webhook config name to limit blast radius.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: webhook-cert-role
+rules:
+  - apiGroups: ["admissionregistration.k8s.io"]
+    resources: ["validatingwebhookconfigurations"]
+    resourceNames: ["node-maintenance-orchestrator-validating-webhook-configuration"]
+    verbs: ["get", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: webhook-cert-rolebinding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: webhook-cert-role
+subjects:
+  - kind: ServiceAccount
+    name: controller-manager
+    namespace: node-maintenance-orchestrator-system
+---
+# Secret access is namespace-scoped.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: webhook-cert-secret-role
+  namespace: node-maintenance-orchestrator-system
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    resourceNames: ["node-maintenance-orchestrator-webhook-cert"]
+    verbs: ["get", "create", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: webhook-cert-secret-rolebinding
+  namespace: node-maintenance-orchestrator-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: webhook-cert-secret-role
+subjects:
+  - kind: ServiceAccount
+    name: controller-manager
+    namespace: node-maintenance-orchestrator-system

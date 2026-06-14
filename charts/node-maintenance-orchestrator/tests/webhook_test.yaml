@@ -1,0 +1,150 @@
+suite: Webhook resources
+release:
+  name: my-release
+  namespace: nmo-system
+
+tests:
+  # ValidatingWebhookConfiguration
+  - it: creates ValidatingWebhookConfiguration when webhook is enabled
+    templates:
+      - templates/validating-webhook.yaml
+    asserts:
+      - hasDocuments:
+          count: 1
+      - equal:
+          path: metadata.name
+          value: my-release-node-maintenance-orchestrator-validating-webhook-configuration
+
+  - it: VWC has failurePolicy Ignore and timeoutSeconds 10
+    templates:
+      - templates/validating-webhook.yaml
+    asserts:
+      - equal:
+          path: webhooks[0].failurePolicy
+          value: Ignore
+      - equal:
+          path: webhooks[0].timeoutSeconds
+          value: 10
+      - equal:
+          path: webhooks[0].sideEffects
+          value: None
+
+  - it: VWC service ref uses release-derived names and correct namespace
+    templates:
+      - templates/validating-webhook.yaml
+    asserts:
+      - equal:
+          path: webhooks[0].clientConfig.service.name
+          value: my-release-node-maintenance-orchestrator-webhook-service
+      - equal:
+          path: webhooks[0].clientConfig.service.namespace
+          value: nmo-system
+      - equal:
+          path: webhooks[0].clientConfig.service.path
+          value: /validate-maintenance-nmoo-io-v1alpha1-nodemaintenanceplan
+
+  - it: does not create ValidatingWebhookConfiguration when webhook is disabled
+    templates:
+      - templates/validating-webhook.yaml
+    set:
+      webhook.enabled: false
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  # Webhook Service
+  - it: creates webhook Service when webhook is enabled
+    templates:
+      - templates/webhook-service.yaml
+    asserts:
+      - hasDocuments:
+          count: 1
+      - equal:
+          path: metadata.name
+          value: my-release-node-maintenance-orchestrator-webhook-service
+      - equal:
+          path: metadata.namespace
+          value: nmo-system
+      - equal:
+          path: spec.ports[0].port
+          value: 443
+      - equal:
+          path: spec.ports[0].targetPort
+          value: 9443
+
+  - it: does not create webhook Service when webhook is disabled
+    templates:
+      - templates/webhook-service.yaml
+    set:
+      webhook.enabled: false
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  # Webhook RBAC
+  - it: creates 4 webhook RBAC resources when webhook is enabled
+    templates:
+      - templates/webhook-rbac.yaml
+    asserts:
+      - hasDocuments:
+          count: 4
+
+  - it: ClusterRole is scoped to the named ValidatingWebhookConfiguration
+    templates:
+      - templates/webhook-rbac.yaml
+    documentIndex: 0
+    asserts:
+      - equal:
+          path: kind
+          value: ClusterRole
+      - equal:
+          path: rules[0].resourceNames[0]
+          value: my-release-node-maintenance-orchestrator-validating-webhook-configuration
+      - equal:
+          path: rules[0].verbs
+          value: [get, patch]
+
+  - it: ClusterRoleBinding references the correct ClusterRole and ServiceAccount
+    templates:
+      - templates/webhook-rbac.yaml
+    documentIndex: 1
+    asserts:
+      - equal:
+          path: kind
+          value: ClusterRoleBinding
+      - equal:
+          path: roleRef.name
+          value: my-release-node-maintenance-orchestrator-webhook-config-role
+      - equal:
+          path: subjects[0].name
+          value: my-release-node-maintenance-orchestrator
+      - equal:
+          path: subjects[0].namespace
+          value: nmo-system
+
+  - it: Role is scoped to the named webhook cert Secret
+    templates:
+      - templates/webhook-rbac.yaml
+    documentIndex: 2
+    asserts:
+      - equal:
+          path: kind
+          value: Role
+      - equal:
+          path: metadata.namespace
+          value: nmo-system
+      - equal:
+          path: rules[0].resourceNames[0]
+          value: my-release-node-maintenance-orchestrator-webhook-cert
+      - equal:
+          path: rules[0].verbs
+          value: [get, create, patch]
+
+  - it: does not create webhook RBAC when webhook is disabled
+    templates:
+      - templates/webhook-rbac.yaml
+    set:
+      webhook.enabled: false
+    asserts:
+      - hasDocuments:
+          count: 0

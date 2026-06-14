@@ -25,4 +25,5 @@ resources:
 - nodemaintenanceplan_admin_role.yaml
 - nodemaintenanceplan_editor_role.yaml
 - nodemaintenanceplan_viewer_role.yaml
+- webhook_role.yaml
 

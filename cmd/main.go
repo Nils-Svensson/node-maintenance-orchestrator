@@ -17,9 +17,11 @@ limitations under the License.
 package main
 
 import (
+	"context"
 	"crypto/tls"
 	"flag"
 	"os"
+	"time"
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
@@ -29,6 +31,7 @@ import (
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/metrics/filters"
@@ -37,6 +40,7 @@ import (
 
 	maintenancev1alpha1 "github.com/Nils-Svensson/node-maintenance-orchestrator/api/v1alpha1"
 	"github.com/Nils-Svensson/node-maintenance-orchestrator/internal/controller"
+	wh "github.com/Nils-Svensson/node-maintenance-orchestrator/internal/webhook"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -62,6 +66,11 @@ func main() {
 	var secureMetrics bool
 	var enableHTTP2 bool
 	var tlsOpts []func(*tls.Config)
+	var webhookEnabled bool
+	var operatorNamespace string
+	var webhookServiceName string
+	var webhookConfigName string
+	var webhookCertSecretName string
 	flag.StringVar(&metricsAddr, "metrics-bind-address", "0", "The address the metrics endpoint binds to. "+
 		"Use :8443 for HTTPS or :8080 for HTTP, or leave as 0 to disable the metrics service.")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
@@ -79,6 +88,16 @@ func main() {
 	flag.StringVar(&metricsCertKey, "metrics-cert-key", "tls.key", "The name of the metrics server key file.")
 	flag.BoolVar(&enableHTTP2, "enable-http2", false,
 		"If set, HTTP/2 will be enabled for the metrics and webhook servers")
+	flag.BoolVar(&webhookEnabled, "webhook-enabled", false,
+		"Enable the validating webhook server. Requires the ValidatingWebhookConfiguration to be pre-installed.")
+	flag.StringVar(&operatorNamespace, "operator-namespace", "node-maintenance-orchestrator-system",
+		"Namespace in which the operator runs. Used to store the webhook TLS secret.")
+	flag.StringVar(&webhookServiceName, "webhook-service-name", "node-maintenance-orchestrator-webhook-service",
+		"Service name that fronts the webhook server. Used as the TLS certificate SAN.")
+	flag.StringVar(&webhookConfigName, "webhook-config-name", "node-maintenance-orchestrator-validating-webhook-configuration",
+		"Name of the ValidatingWebhookConfiguration whose caBundle is managed by the operator.")
+	flag.StringVar(&webhookCertSecretName, "webhook-cert-secret-name", "node-maintenance-orchestrator-webhook-cert",
+		"Name of the Secret used to store the shared webhook CA cert and key.")
 	opts := zap.Options{
 		Development: true,
 	}
@@ -102,22 +121,58 @@ func main() {
 		tlsOpts = append(tlsOpts, disableHTTP2)
 	}
 
-	// Initial webhook TLS options
-	webhookTLSOpts := tlsOpts
-	webhookServerOptions := webhook.Options{
-		TLSOpts: webhookTLSOpts,
+	restConfig := ctrl.GetConfigOrDie()
+
+	// Bootstrap self-signed webhook certs when no external cert path is provided.
+	// The bootstrapper writes certs to certDir and patches the ValidatingWebhookConfiguration
+	// caBundle so the API server trusts them.
+	const defaultWebhookCertDir = "/tmp/k8s-webhook-server/serving-certs"
+	var bootstrapper *wh.CertBootstrapper
+	if webhookEnabled && len(webhookCertPath) == 0 {
+		bootstrapClient, err := client.New(restConfig, client.Options{Scheme: scheme})
+		if err != nil {
+			setupLog.Error(err, "unable to create bootstrap client")
+			os.Exit(1)
+		}
+		bootstrapper = &wh.CertBootstrapper{
+			Client:            bootstrapClient,
+			Namespace:         operatorNamespace,
+			CertDir:           defaultWebhookCertDir,
+			SecretName:        webhookCertSecretName,
+			WebhookConfigName: webhookConfigName,
+			ServiceName:       webhookServiceName,
+		}
+		bootstrapCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		if err := bootstrapper.EnsureCerts(bootstrapCtx); err != nil {
+			// Non-fatal: bootstrap fails when running outside the cluster (e.g. make run)
+			// because the operator namespace doesn't exist locally. The webhook server
+			// will still start with controller-runtime's temp certs, but admission
+			// requests won't reach it from inside the cluster anyway in that scenario.
+			setupLog.Info("webhook cert bootstrap skipped; webhook validation unavailable", "reason", err.Error())
+			bootstrapper = nil
+		} else {
+			webhookCertPath = defaultWebhookCertDir
+			setupLog.Info("webhook certificates bootstrapped", "certDir", webhookCertPath)
+		}
 	}
 
-	if len(webhookCertPath) > 0 {
-		setupLog.Info("Initializing webhook certificate watcher using provided certificates",
-			"webhook-cert-path", webhookCertPath, "webhook-cert-name", webhookCertName, "webhook-cert-key", webhookCertKey)
+	// webhookReady is true only when the webhook is enabled AND valid certs exist
+	// (either from a successful bootstrap or from a user-provided cert path).
+	// When false, the webhook server is not created and the manager runs without it.
+	webhookReady := webhookEnabled && len(webhookCertPath) > 0
 
-		webhookServerOptions.CertDir = webhookCertPath
-		webhookServerOptions.CertName = webhookCertName
-		webhookServerOptions.KeyName = webhookCertKey
+	var webhookServer webhook.Server
+	if webhookReady {
+		setupLog.Info("initializing webhook server",
+			"certDir", webhookCertPath, "certName", webhookCertName, "keyName", webhookCertKey)
+		webhookServer = webhook.NewServer(webhook.Options{
+			TLSOpts:  tlsOpts,
+			CertDir:  webhookCertPath,
+			CertName: webhookCertName,
+			KeyName:  webhookCertKey,
+		})
 	}
-
-	webhookServer := webhook.NewServer(webhookServerOptions)
 
 	// Metrics endpoint is enabled in 'config/default/kustomization.yaml'. The Metrics options configure the server.
 	// More info:
@@ -154,13 +209,14 @@ func main() {
 		metricsServerOptions.KeyName = metricsCertKey
 	}
 
-	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
+	mgr, err := ctrl.NewManager(restConfig, ctrl.Options{
 		Scheme:                 scheme,
 		Metrics:                metricsServerOptions,
 		WebhookServer:          webhookServer,
 		HealthProbeBindAddress: probeAddr,
 		LeaderElection:         enableLeaderElection,
-		LeaderElectionID:       "ab079f3e.nmoo.io",
+		// Hardcoded to be stable across versions
+		LeaderElectionID: "ab079f3e.nmoo.io",
 		// LeaderElectionReleaseOnCancel defines if the leader should step down voluntarily
 		// when the Manager ends. This requires the binary to immediately end when the
 		// Manager is stopped, otherwise, this setting is unsafe. Setting this significantly
@@ -178,6 +234,13 @@ func main() {
 		os.Exit(1)
 	}
 
+	if bootstrapper != nil {
+		if err := mgr.Add(bootstrapper); err != nil {
+			setupLog.Error(err, "unable to register cert renewer")
+			os.Exit(1)
+		}
+	}
+
 	if err := (&controller.NodeMaintenancePlanReconciler{
 		Client:   mgr.GetClient(),
 		Recorder: mgr.GetEventRecorderFor("node-maintenance-orchestrator"),
@@ -185,6 +248,15 @@ func main() {
 		setupLog.Error(err, "unable to create controller", "controller", "NodeMaintenancePlan")
 		os.Exit(1)
 	}
+	if webhookReady {
+		validator := &wh.NodeMaintenancePlanValidator{Client: mgr.GetClient()}
+		webhookServer.Register(
+			"/validate-maintenance-nmoo-io-v1alpha1-nodemaintenanceplan",
+			&webhook.Admission{Handler: validator},
+		)
+		setupLog.Info("validating webhook registered")
+	}
+
 	// +kubebuilder:scaffold:builder
 
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {

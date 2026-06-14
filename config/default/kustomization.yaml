@@ -6,6 +6,7 @@ resources:
 - ../crd
 - ../rbac
 - ../manager
+- ../webhook
 - metrics_service.yaml
 
 patches:

@@ -1,0 +1,114 @@
+suite: Deployment
+templates:
+  - templates/deployment.yaml
+release:
+  name: my-release
+  namespace: nmo-system
+
+tests:
+  - it: renders exactly one Deployment
+    asserts:
+      - hasDocuments:
+          count: 1
+
+  - it: uses release-derived name and namespace
+    asserts:
+      - equal:
+          path: metadata.name
+          value: my-release-node-maintenance-orchestrator
+      - equal:
+          path: metadata.namespace
+          value: nmo-system
+
+  - it: sets replica count from values
+    asserts:
+      - equal:
+          path: spec.replicas
+          value: 2
+
+  - it: includes leader-elect flag when enabled
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: "--leader-elect"
+
+  - it: omits leader-elect flag when disabled
+    set:
+      leaderElection.enabled: false
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].args
+          content: "--leader-elect"
+
+  - it: includes all webhook args when webhook is enabled
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: "--webhook-enabled=true"
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: "--operator-namespace=nmo-system"
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: "--webhook-service-name=my-release-node-maintenance-orchestrator-webhook-service"
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: "--webhook-config-name=my-release-node-maintenance-orchestrator-validating-webhook-configuration"
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: "--webhook-cert-secret-name=my-release-node-maintenance-orchestrator-webhook-cert"
+
+  - it: exposes port 9443 and mounts /tmp when webhook is enabled
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].ports
+          content:
+            containerPort: 9443
+            name: webhook-server
+            protocol: TCP
+      - contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: tmp
+            mountPath: /tmp
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: tmp
+            emptyDir: {}
+
+  - it: omits webhook args, port, and tmp volume when webhook is disabled
+    set:
+      webhook.enabled: false
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].args
+          content: "--webhook-enabled=true"
+      - isNull:
+          path: spec.template.spec.containers[0].ports
+      - isNull:
+          path: spec.template.spec.containers[0].volumeMounts
+      - isNull:
+          path: spec.template.spec.volumes
+
+  - it: passes certPath flag when BYO cert path is set
+    set:
+      webhook.certPath: /etc/certs/tls
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: "--webhook-cert-path=/etc/certs/tls"
+
+  - it: omits certPath flag when not set
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].args
+          content: "--webhook-cert-path"
+
+  - it: uses custom replica count
+    set:
+      replicaCount: 1
+    asserts:
+      - equal:
+          path: spec.replicas
+          value: 1

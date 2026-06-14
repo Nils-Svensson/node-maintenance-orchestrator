@@ -41,3 +41,15 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- include "nmo.fullname" . }}
 {{- end }}
 {{- end }}
+
+{{- define "nmo.webhookServiceName" -}}
+{{- printf "%s-webhook-service" (include "nmo.fullname" .) }}
+{{- end }}
+
+{{- define "nmo.webhookConfigName" -}}
+{{- printf "%s-validating-webhook-configuration" (include "nmo.fullname" .) }}
+{{- end }}
+
+{{- define "nmo.webhookCertSecretName" -}}
+{{- printf "%s-webhook-cert" (include "nmo.fullname" .) }}
+{{- end }}

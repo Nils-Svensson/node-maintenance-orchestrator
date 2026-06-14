@@ -16,6 +16,14 @@ serviceAccount:
 leaderElection:
   enabled: true
 
+webhook:
+  enabled: true
+  port: 9443
+  # BYO cert: path inside the container to a directory containing tls.crt and tls.key.
+  # When set, the operator skips self-signed cert bootstrap and uses these files directly.
+  # You are responsible for mounting the cert files and keeping them rotated.
+  # certPath: ""
+
 metrics:
   enabled: true
   service:

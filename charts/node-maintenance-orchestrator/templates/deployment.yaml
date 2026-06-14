@@ -36,6 +36,22 @@ spec:
             - --metrics-bind-address=:{{ .Values.metrics.service.port }}
             - --metrics-secure=false
             {{- end }}
+            {{- if .Values.webhook.enabled }}
+            - --webhook-enabled=true
+            - --operator-namespace={{ .Release.Namespace }}
+            - --webhook-service-name={{ include "nmo.webhookServiceName" . }}
+            - --webhook-config-name={{ include "nmo.webhookConfigName" . }}
+            - --webhook-cert-secret-name={{ include "nmo.webhookCertSecretName" . }}
+            {{- if .Values.webhook.certPath }}
+            - --webhook-cert-path={{ .Values.webhook.certPath }}
+            {{- end }}
+            {{- end }}
+          {{- if .Values.webhook.enabled }}
+          ports:
+            - containerPort: {{ .Values.webhook.port }}
+              name: webhook-server
+              protocol: TCP
+          {{- end }}
           securityContext:
             readOnlyRootFilesystem: true
             allowPrivilegeEscalation: false
@@ -56,6 +72,16 @@ spec:
             periodSeconds: 10
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
+          {{- if .Values.webhook.enabled }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+          {{- end }}
+      {{- if .Values.webhook.enabled }}
+      volumes:
+        - name: tmp
+          emptyDir: {}
+      {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}

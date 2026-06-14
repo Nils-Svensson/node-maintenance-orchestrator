@@ -1,0 +1,17 @@
+apiVersion: maintenance.nmoo.io/v1alpha1
+kind: NodeMaintenancePlan
+metadata:
+  name: admissiontest
+spec:
+  reason: "Planned maintenance"
+  nodes: [kind-worker1234]
+  cordon:
+    enabled: true
+  drain: 
+    enabled: true
+    timeoutMinutes: 120
+    options:
+      maxParallel: 1
+      force: true
+      ignoreDaemonSets: true
+      
