@@ -25,7 +25,7 @@ var _ = Describe("Health", Ordered, func() {
 	})
 
 	It("should report DrainBlocked with NodeNotReady issue when a managed node goes NotReady, and resume drain after recovery", func() {
-		target := workerNodes[0]
+		target := workerNodes[1]
 		nmpName := "e2e-notready-recovery"
 		deployName := "e2e-notready-workload"
 

@@ -11,6 +11,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
@@ -26,8 +27,9 @@ import (
 //
 // For plans with spec.nodeSelector (CREATE only):
 //   - the selector must match at least one existing node
+//   - no matching node may be owned by a different plan
 //
-// The nodeSelector check is CREATE-only because the node set is frozen into a
+// The nodeSelector checks are CREATE-only because the node set is frozen into a
 // snapshot on first reconcile. Once the snapshot exists, changing the selector
 // has no effect, so rejecting an UPDATE that would match nothing is misleading.
 type NodeMaintenancePlanValidator struct {
@@ -46,7 +48,7 @@ func (v *NodeMaintenancePlanValidator) Handle(ctx context.Context, req admission
 
 	if len(plan.Spec.Nodes) == 0 {
 		if req.Operation == admissionv1.Create && plan.Spec.NodeSelector != nil {
-			return v.validateNodeSelector(ctx, plan.Spec.NodeSelector)
+			return v.validateNodeSelector(ctx, plan.Name, plan.Spec.NodeSelector)
 		}
 		return admission.Allowed("ok")
 	}
@@ -73,17 +75,55 @@ func (v *NodeMaintenancePlanValidator) Handle(ctx context.Context, req admission
 	return admission.Allowed("ok")
 }
 
-func (v *NodeMaintenancePlanValidator) validateNodeSelector(ctx context.Context, selector *metav1.LabelSelector) admission.Response {
+func (v *NodeMaintenancePlanValidator) validateNodeSelector(ctx context.Context, planName string, selector *metav1.LabelSelector) admission.Response {
 	s, err := metav1.LabelSelectorAsSelector(selector)
 	if err != nil {
 		return admission.Errored(http.StatusBadRequest, fmt.Errorf("invalid nodeSelector: %w", err))
 	}
-	var nodeList corev1.NodeList
-	if err := v.Client.List(ctx, &nodeList, &client.ListOptions{LabelSelector: s, Limit: 1}); err != nil {
+	var sample corev1.NodeList
+	if err := v.Client.List(ctx, &sample, &client.ListOptions{LabelSelector: s, Limit: 1}); err != nil {
 		return admission.Errored(http.StatusInternalServerError, err)
 	}
-	if len(nodeList.Items) == 0 {
+	if len(sample.Items) == 0 {
 		return admission.Denied("nodeSelector matches no existing nodes")
 	}
+
+	// Check ownership by iterating over existing plans' nodes rather than all nodes
+	// matching the selector — plans are few, so this scales well in large clusters.
+	var planList v1alpha1.NodeMaintenancePlanList
+	if err := v.Client.List(ctx, &planList); err != nil {
+		return admission.Errored(http.StatusInternalServerError, err)
+	}
+	var denied []string
+	for i := range planList.Items {
+		existing := &planList.Items[i]
+		if existing.Name == planName {
+			continue
+		}
+		for _, nodeName := range planOwnedNodes(existing) {
+			var node corev1.Node
+			if err := v.Client.Get(ctx, types.NamespacedName{Name: nodeName}, &node); err != nil {
+				if apierrors.IsNotFound(err) {
+					continue
+				}
+				return admission.Errored(http.StatusInternalServerError, err)
+			}
+			if s.Matches(labels.Set(node.Labels)) {
+				denied = append(denied, fmt.Sprintf("node %q is already owned by plan %q", nodeName, existing.Name))
+			}
+		}
+	}
+	if len(denied) > 0 {
+		return admission.Denied(strings.Join(denied, "; "))
+	}
 	return admission.Allowed("ok")
+}
+
+// planOwnedNodes returns the node names a plan currently manages: spec.nodes for
+// explicit-node plans, or status.resolvedNodes for selector-based plans after snapshot.
+func planOwnedNodes(plan *v1alpha1.NodeMaintenancePlan) []string {
+	if len(plan.Spec.Nodes) > 0 {
+		return plan.Spec.Nodes
+	}
+	return plan.Status.ResolvedNodes
 }

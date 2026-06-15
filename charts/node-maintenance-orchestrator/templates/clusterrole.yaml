@@ -28,4 +28,4 @@ rules:
   verbs: [get, patch, update]
 - apiGroups: [policy]
   resources: [poddisruptionbudgets]
-  verbs: [list]
+  verbs: [list, watch]

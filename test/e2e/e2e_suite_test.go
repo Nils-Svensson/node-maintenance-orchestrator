@@ -83,8 +83,8 @@ var _ = BeforeSuite(func() {
 	nodeOutput, err := utils.Run(cmd)
 	Expect(err).NotTo(HaveOccurred(), "failed to list worker nodes")
 	workerNodes = strings.Fields(strings.TrimSpace(nodeOutput))
-	Expect(len(workerNodes)).To(BeNumerically(">=", 2),
-		"e2e tests require at least 2 worker nodes")
+	Expect(len(workerNodes)).To(BeNumerically(">=", 5),
+		"e2e tests require at least 5 worker nodes")
 
 	By("waiting for controller pods to be running")
 	Eventually(func(g Gomega) {

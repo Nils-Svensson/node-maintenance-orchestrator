@@ -63,3 +63,4 @@ rules:
   - poddisruptionbudgets
   verbs:
   - list
+  - watch

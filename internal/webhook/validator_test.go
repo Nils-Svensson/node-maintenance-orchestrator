@@ -20,6 +20,7 @@ import (
 func newValidator(objects ...client.Object) *NodeMaintenancePlanValidator {
 	s := runtime.NewScheme()
 	_ = corev1.AddToScheme(s)
+	_ = v1alpha1.AddToScheme(s)
 	fc := fake.NewClientBuilder().WithScheme(s).WithObjects(objects...).Build()
 	return &NodeMaintenancePlanValidator{Client: fc}
 }
@@ -50,6 +51,13 @@ func nodeWithAnnotation(name, annotation string) *corev1.Node {
 
 func labeledNode(name string, labels map[string]string) *corev1.Node {
 	return &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: name, Labels: labels}}
+}
+
+func existingPlan(name string, nodes []string) *v1alpha1.NodeMaintenancePlan {
+	return &v1alpha1.NodeMaintenancePlan{
+		ObjectMeta: metav1.ObjectMeta{Name: name},
+		Spec:       v1alpha1.NodeMaintenancePlanSpec{Nodes: nodes},
+	}
 }
 
 func plan(name string, nodes []string, selector *metav1.LabelSelector) v1alpha1.NodeMaintenancePlan {
@@ -138,6 +146,17 @@ func TestHandle(t *testing.T) {
 			}),
 			wantAllowed: false,
 			wantCode:    http.StatusBadRequest,
+		},
+		{
+			name: "CREATE with nodeSelector denied when matching node is owned by another plan",
+			op:   admissionv1.Create,
+			plan: plan("p", nil, &metav1.LabelSelector{MatchLabels: map[string]string{"role": "worker"}}),
+			clusterObjs: []client.Object{
+				labeledNode("node-a", map[string]string{"role": "worker"}),
+				existingPlan("other-plan", []string{"node-a"}),
+			},
+			wantAllowed: false,
+			wantMsg:     `node "node-a" is already owned by plan "other-plan"`,
 		},
 		{
 			name: "UPDATE with nodeSelector matching no nodes is still allowed",

@@ -122,6 +122,77 @@ spec:
 		}).Should(Succeed())
 	})
 
+	It("should reject creation of a nodeSelector plan whose selector matches a node already owned by another plan", func() {
+		ownerPlan := "e2e-webhook-selector-owner"
+		conflictPlan := "e2e-webhook-selector-conflict"
+		target := workerNodes[0]
+		testLabel := "maintenance.nmoo.io/e2e-webhook-selector-test"
+
+		DeferCleanup(func() {
+			cmd := exec.Command("kubectl", "label", "node", target, testLabel+"-")
+			_, _ = utils.Run(cmd)
+			for _, name := range []string{ownerPlan, conflictPlan} {
+				cmd := exec.Command("kubectl", "delete", "nmp", name, "--ignore-not-found=true")
+				_, _ = utils.Run(cmd)
+			}
+		})
+
+		By("labeling the target node so the conflict plan's selector will match it")
+		cmd := exec.Command("kubectl", "label", "node", target, testLabel+"=true")
+		_, err := utils.Run(cmd)
+		Expect(err).NotTo(HaveOccurred())
+
+		By("creating plan A to own the target node")
+		ownerYAML := fmt.Sprintf(`
+apiVersion: maintenance.nmoo.io/v1alpha1
+kind: NodeMaintenancePlan
+metadata:
+  name: %s
+spec:
+  nodes:
+    - %s
+  reason: "e2e webhook selector owner plan"
+`, ownerPlan, target)
+		cmd = exec.Command("kubectl", "apply", "-f", "-")
+		cmd.Stdin = strings.NewReader(ownerYAML)
+		_, err = utils.Run(cmd)
+		Expect(err).NotTo(HaveOccurred())
+
+		By("waiting for plan A to adopt the node")
+		Eventually(func(g Gomega) {
+			cmd := exec.Command("kubectl", "get", "node", target,
+				"-o", `jsonpath={.metadata.annotations.maintenance\.nmoo\.io/managed-by}`)
+			output, err := utils.Run(cmd)
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(output).To(Equal(ownerPlan))
+		}).Should(Succeed())
+
+		By("attempting to create a nodeSelector plan whose selector resolves to the already-owned node")
+		conflictYAML := fmt.Sprintf(`
+apiVersion: maintenance.nmoo.io/v1alpha1
+kind: NodeMaintenancePlan
+metadata:
+  name: %s
+spec:
+  nodeSelector:
+    matchLabels:
+      %s: "true"
+  reason: "e2e webhook nodeSelector conflict plan"
+`, conflictPlan, testLabel)
+
+		Eventually(func(g Gomega) {
+			cmd := exec.Command("kubectl", "apply", "-f", "-")
+			cmd.Stdin = strings.NewReader(conflictYAML)
+			output, err := utils.Run(cmd)
+			if err == nil {
+				_ = exec.Command("kubectl", "delete", "nmp", conflictPlan, "--ignore-not-found=true").Run()
+				g.Expect("webhook accepted request").To(Equal("webhook should have denied request"))
+				return
+			}
+			g.Expect(output).To(ContainSubstring("already owned by"))
+		}).Should(Succeed())
+	})
+
 	It("should automatically rotate the CA cert when it is within the renewal window", func() {
 		By("reading the current caBundle from the ValidatingWebhookConfiguration")
 		cmd := exec.Command("kubectl", "get", "validatingwebhookconfiguration",

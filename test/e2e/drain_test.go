@@ -25,7 +25,7 @@ var _ = Describe("Drain", Ordered, func() {
 	})
 
 	It("should report DrainBlocked when a PodDisruptionBudget prevents eviction, then complete after PDB is removed", func() {
-		target := workerNodes[0]
+		target := workerNodes[2]
 		nmpName := "e2e-pdb"
 		deployName := "e2e-pdb-workload"
 		pdbName := "e2e-pdb-block"
@@ -130,7 +130,7 @@ spec:
 	})
 
 	It("should block drain for an uncontrolled pod, then drain successfully after enabling force", func() {
-		target := workerNodes[1]
+		target := workerNodes[3]
 		nmpName := "e2e-force"
 		podName := "e2e-uncontrolled"
 
@@ -305,7 +305,7 @@ spec:
 	})
 
 	It("should mark DrainTimedOut when drain does not complete within timeoutMinutes", func() {
-		target := workerNodes[1]
+		target := workerNodes[0]
 		nmpName := "e2e-drain-timeout"
 		deployName := "e2e-drain-timeout-workload"
 
@@ -586,7 +586,7 @@ spec:
 	})
 
 	It("should wait for pods to fully terminate before reporting drain complete", func() {
-		target := workerNodes[0]
+		target := workerNodes[4]
 		nmpName := "e2e-slow-term"
 		deployName := "e2e-slow-term-workload"
 
