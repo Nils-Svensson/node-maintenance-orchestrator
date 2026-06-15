@@ -34,7 +34,8 @@ import (
 )
 
 var (
-	projectImage = "example.com/node-maintenance-orchestrator:v0.0.1"
+	projectImage       = "example.com/node-maintenance-orchestrator:v0.0.1"
+	bootstrapSucceeded bool
 )
 
 func TestE2E(t *testing.T) {
@@ -111,9 +112,25 @@ var _ = BeforeSuite(func() {
 		g.Expect(err).NotTo(HaveOccurred())
 		g.Expect(strings.TrimSpace(output)).NotTo(BeEmpty(), "caBundle should be set by the operator")
 	}, 2*time.Minute, 5*time.Second).Should(Succeed())
+
+	bootstrapSucceeded = true
 })
 
 var _ = AfterSuite(func() {
+	if !bootstrapSucceeded {
+		By("Fetching controller manager pod logs after bootstrap failure")
+		cmd := exec.Command("kubectl", "logs", "-l", "control-plane=controller-manager",
+			"-n", namespace, "--all-containers=true", "--tail=200")
+		if logs, err := utils.Run(cmd); err == nil {
+			_, _ = fmt.Fprintf(GinkgoWriter, "Controller logs:\n%s\n", logs)
+		}
+		By("Fetching Kubernetes events after bootstrap failure")
+		cmd = exec.Command("kubectl", "get", "events", "-n", namespace, "--sort-by=.lastTimestamp")
+		if events, err := utils.Run(cmd); err == nil {
+			_, _ = fmt.Fprintf(GinkgoWriter, "Kubernetes events:\n%s\n", events)
+		}
+	}
+
 	By("cleaning up the curl pod for metrics")
 	cmd := exec.Command("kubectl", "delete", "pod", "curl-metrics", "-n", namespace, "--ignore-not-found=true")
 	_, _ = utils.Run(cmd)
