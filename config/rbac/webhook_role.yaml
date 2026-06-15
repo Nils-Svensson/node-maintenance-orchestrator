@@ -25,6 +25,8 @@ subjects:
     namespace: system
 ---
 # Secret access is namespace-scoped.
+# create must be in a separate rule without resourceNames — Kubernetes RBAC does
+# not evaluate resourceNames for create requests (the resource has no name yet).
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
@@ -33,8 +35,11 @@ metadata:
 rules:
   - apiGroups: [""]
     resources: ["secrets"]
+    verbs: ["create"]
+  - apiGroups: [""]
+    resources: ["secrets"]
     resourceNames: ["node-maintenance-orchestrator-webhook-cert"]
-    verbs: ["get", "create", "patch"]
+    verbs: ["get", "patch"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding

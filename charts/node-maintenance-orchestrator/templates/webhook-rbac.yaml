@@ -29,7 +29,8 @@ subjects:
     namespace: {{ .Release.Namespace }}
 ---
 # Role: get + create + patch the webhook CA Secret (cert bootstrap and rotation).
-# Scoped to a single named Secret to minimise blast radius.
+# create must be in a separate rule without resourceNames — Kubernetes RBAC does
+# not evaluate resourceNames for create requests (the resource has no name yet).
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
@@ -40,8 +41,11 @@ metadata:
 rules:
   - apiGroups: [""]
     resources: [secrets]
+    verbs: [create]
+  - apiGroups: [""]
+    resources: [secrets]
     resourceNames: [{{ include "nmo.webhookCertSecretName" . | quote }}]
-    verbs: [get, create, patch]
+    verbs: [get, patch]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
