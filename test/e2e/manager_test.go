@@ -58,6 +58,9 @@ var _ = Describe("Manager", Ordered, func() {
 			cmd := exec.Command("kubectl", "delete", "clusterrolebinding", metricsRoleBindingName,
 				"--ignore-not-found=true")
 			_, _ = utils.Run(cmd)
+			cmd = exec.Command("kubectl", "delete", "pod", "curl-metrics",
+				"-n", namespace, "--ignore-not-found=true")
+			_, _ = utils.Run(cmd)
 		})
 
 		By("validating that the metrics service is available")
