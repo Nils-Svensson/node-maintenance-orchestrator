@@ -143,14 +143,17 @@ func main() {
 			WebhookConfigName: webhookConfigName,
 			ServiceName:       webhookServiceName,
 		}
+		setupLog.Info("bootstrapping webhook certificates",
+			"namespace", operatorNamespace,
+			"secretName", webhookCertSecretName,
+			"webhookConfigName", webhookConfigName,
+			"serviceName", webhookServiceName,
+			"certDir", defaultWebhookCertDir)
 		bootstrapCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 		if err := bootstrapper.EnsureCerts(bootstrapCtx); err != nil {
-			// Non-fatal: bootstrap fails when running outside the cluster (e.g. make run)
-			// because the operator namespace doesn't exist locally. The webhook server
-			// will still start with controller-runtime's temp certs, but admission
-			// requests won't reach it from inside the cluster anyway in that scenario.
-			setupLog.Info("webhook cert bootstrap skipped; webhook validation unavailable", "reason", err.Error())
+			// Non-fatal: bootstrap fails when running outside the cluster (e.g. make run).
+			setupLog.Error(err, "webhook cert bootstrap failed; running without webhook validation")
 			bootstrapper = nil
 		} else {
 			webhookCertPath = defaultWebhookCertDir
@@ -243,7 +246,7 @@ func main() {
 	}
 
 	if err := (&controller.NodeMaintenancePlanReconciler{
-		Client:   mgr.GetClient(),
+		Client: mgr.GetClient(),
 		// TODO: migrate Recorder field to events.EventRecorder and use mgr.GetEventRecorder.
 		Recorder: mgr.GetEventRecorderFor("node-maintenance-orchestrator"), //nolint:staticcheck
 	}).SetupWithManager(mgr); err != nil {

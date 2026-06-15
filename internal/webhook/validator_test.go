@@ -82,9 +82,9 @@ func TestHandle(t *testing.T) {
 			wantAllowed: true,
 		},
 		{
-			name:        "CREATE with existing unowned nodes is allowed",
-			op:          admissionv1.Create,
-			plan:        plan("p", []string{"node-a", "node-b"}, nil),
+			name: "CREATE with existing unowned nodes is allowed",
+			op:   admissionv1.Create,
+			plan: plan("p", []string{"node-a", "node-b"}, nil),
 			clusterObjs: []client.Object{
 				&corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "node-a"}},
 				&corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "node-b"}},

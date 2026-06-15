@@ -28,6 +28,14 @@ const (
 	renewalCheckInterval = 12 * time.Hour
 )
 
+// Secret data field names and PEM block type labels.
+const (
+	caCertField     = "ca.crt"
+	caKeyField      = "ca.key"
+	pemCertificate  = "CERTIFICATE"
+	pemECPrivateKey = "EC PRIVATE KEY"
+)
+
 // CertBootstrapper manages self-signed TLS credentials for the webhook server.
 //
 // Design for HA (multiple replicas):
@@ -71,68 +79,81 @@ func (b *CertBootstrapper) Start(ctx context.Context) error {
 
 // EnsureCerts is idempotent and safe to call on every pod startup.
 func (b *CertBootstrapper) EnsureCerts(ctx context.Context) error {
+	logger := log.FromContext(ctx).WithName("cert-bootstrapper")
+
 	caCert, caKey, err := b.ensureCA(ctx)
 	if err != nil {
 		return err
 	}
 
+	logger.V(1).Info("generating server certificate", "service", b.ServiceName, "namespace", b.Namespace)
 	serverCert, serverKey, err := generateServerCert(caCert, caKey, b.ServiceName, b.Namespace)
 	if err != nil {
 		return fmt.Errorf("generating server cert: %w", err)
 	}
 
+	logger.V(1).Info("writing certificates to disk", "dir", b.CertDir)
 	if err := b.writeToDisk(serverCert, serverKey); err != nil {
 		return fmt.Errorf("writing certs to disk: %w", err)
 	}
 
-	return b.patchCABundle(ctx, caCert)
+	if err := b.patchCABundle(ctx, caCert); err != nil {
+		return err
+	}
+	logger.Info("webhook certificates ready")
+	return nil
 }
 
 // ensureCA returns the shared CA cert and key, creating or rotating the Secret
 // as needed. It handles concurrent Create calls from multiple pods.
 func (b *CertBootstrapper) ensureCA(ctx context.Context) (caCert, caKey []byte, err error) {
+	logger := log.FromContext(ctx).WithName("cert-bootstrapper")
+
 	secret := &corev1.Secret{}
 	getErr := b.Client.Get(ctx, types.NamespacedName{Namespace: b.Namespace, Name: b.SecretName}, secret)
 
 	switch {
 	case getErr == nil && !caIsExpiring(secret):
-		// Happy path: existing CA is still valid.
-		return secret.Data["ca.crt"], secret.Data["ca.key"], nil
+		logger.V(1).Info("reusing existing CA", "secret", b.SecretName)
+		return secret.Data[caCertField], secret.Data[caKeyField], nil
 
 	case getErr == nil && caIsExpiring(secret):
-		// CA is within the renewal window — rotate it.
+		logger.Info("CA is expiring, rotating", "secret", b.SecretName)
 		caCert, caKey, err = generateCA()
 		if err != nil {
 			return nil, nil, fmt.Errorf("rotating CA: %w", err)
 		}
 		patch := client.MergeFrom(secret.DeepCopy())
-		secret.Data["ca.crt"] = caCert
-		secret.Data["ca.key"] = caKey
+		secret.Data[caCertField] = caCert
+		secret.Data[caKeyField] = caKey
 		if err := b.Client.Patch(ctx, secret, patch); err != nil {
 			return nil, nil, fmt.Errorf("patching CA secret: %w", err)
 		}
+		logger.Info("CA rotated", "secret", b.SecretName)
 		return caCert, caKey, nil
 
 	case apierrors.IsNotFound(getErr):
-		// Secret doesn't exist yet — generate and create it.
+		logger.Info("creating CA secret", "secret", b.SecretName, "namespace", b.Namespace)
 		caCert, caKey, err = generateCA()
 		if err != nil {
 			return nil, nil, fmt.Errorf("generating CA: %w", err)
 		}
 		newSecret := &corev1.Secret{
 			ObjectMeta: metav1.ObjectMeta{Name: b.SecretName, Namespace: b.Namespace},
-			Data:       map[string][]byte{"ca.crt": caCert, "ca.key": caKey},
+			Data:       map[string][]byte{caCertField: caCert, caKeyField: caKey},
 		}
 		if createErr := b.Client.Create(ctx, newSecret); createErr != nil {
 			if !apierrors.IsAlreadyExists(createErr) {
 				return nil, nil, fmt.Errorf("creating CA secret: %w", createErr)
 			}
 			// Another pod won the Create race — read the winner's Secret.
+			logger.V(1).Info("CA secret already exists (create race), reading winner's secret")
 			if err := b.Client.Get(ctx, types.NamespacedName{Namespace: b.Namespace, Name: b.SecretName}, secret); err != nil {
 				return nil, nil, fmt.Errorf("reading CA secret after create race: %w", err)
 			}
-			return secret.Data["ca.crt"], secret.Data["ca.key"], nil
+			return secret.Data[caCertField], secret.Data[caKeyField], nil
 		}
+		logger.Info("CA secret created", "secret", b.SecretName)
 		return caCert, caKey, nil
 
 	default:
@@ -141,7 +162,7 @@ func (b *CertBootstrapper) ensureCA(ctx context.Context) (caCert, caKey []byte, 
 }
 
 func caIsExpiring(secret *corev1.Secret) bool {
-	block, _ := pem.Decode(secret.Data["ca.crt"])
+	block, _ := pem.Decode(secret.Data[caCertField])
 	if block == nil {
 		return true
 	}
@@ -178,8 +199,8 @@ func generateCA() (caCert, caKey []byte, err error) {
 		return nil, nil, fmt.Errorf("marshaling key: %w", err)
 	}
 
-	caCert = pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: certDER})
-	caKey = pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: keyDER})
+	caCert = pem.EncodeToMemory(&pem.Block{Type: pemCertificate, Bytes: certDER})
+	caKey = pem.EncodeToMemory(&pem.Block{Type: pemECPrivateKey, Bytes: keyDER})
 	return caCert, caKey, nil
 }
 
@@ -234,8 +255,8 @@ func generateServerCert(caCertPEM, caKeyPEM []byte, serviceName, namespace strin
 		return nil, nil, fmt.Errorf("marshaling server key: %w", err)
 	}
 
-	serverCert = pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: certDER})
-	serverKey = pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: keyDER})
+	serverCert = pem.EncodeToMemory(&pem.Block{Type: pemCertificate, Bytes: certDER})
+	serverKey = pem.EncodeToMemory(&pem.Block{Type: pemECPrivateKey, Bytes: keyDER})
 	return serverCert, serverKey, nil
 }
 
@@ -253,13 +274,22 @@ func (b *CertBootstrapper) writeToDisk(serverCert, serverKey []byte) error {
 }
 
 func (b *CertBootstrapper) patchCABundle(ctx context.Context, caBundle []byte) error {
+	logger := log.FromContext(ctx).WithName("cert-bootstrapper")
+	logger.Info("patching caBundle", "webhookConfig", b.WebhookConfigName)
+
 	webhookConfig := &admissionregistrationv1.ValidatingWebhookConfiguration{}
 	if err := b.Client.Get(ctx, types.NamespacedName{Name: b.WebhookConfigName}, webhookConfig); err != nil {
 		return fmt.Errorf("getting webhook config %q: %w", b.WebhookConfigName, err)
 	}
+	logger.V(1).Info("found ValidatingWebhookConfiguration", "webhooks", len(webhookConfig.Webhooks))
+
 	patch := client.MergeFrom(webhookConfig.DeepCopy())
 	for i := range webhookConfig.Webhooks {
 		webhookConfig.Webhooks[i].ClientConfig.CABundle = caBundle
 	}
-	return b.Client.Patch(ctx, webhookConfig, patch)
+	if err := b.Client.Patch(ctx, webhookConfig, patch); err != nil {
+		return fmt.Errorf("patching caBundle on %q: %w", b.WebhookConfigName, err)
+	}
+	logger.Info("caBundle patched", "webhookConfig", b.WebhookConfigName, "bytes", len(caBundle))
+	return nil
 }
