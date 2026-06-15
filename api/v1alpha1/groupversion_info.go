@@ -29,7 +29,8 @@ var (
 	GroupVersion = schema.GroupVersion{Group: "maintenance.nmoo.io", Version: "v1alpha1"}
 
 	// SchemeBuilder is used to add go types to the GroupVersionKind scheme.
-	SchemeBuilder = &scheme.Builder{GroupVersion: GroupVersion}
+	// TODO: migrate to runtime.NewSchemeBuilder + addKnownTypes to drop the scheme.Builder dependency.
+	SchemeBuilder = &scheme.Builder{GroupVersion: GroupVersion} //nolint:staticcheck
 
 	// AddToScheme adds the types in this group-version to the given scheme.
 	AddToScheme = SchemeBuilder.AddToScheme

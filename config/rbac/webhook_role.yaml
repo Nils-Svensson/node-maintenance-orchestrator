@@ -22,14 +22,14 @@ roleRef:
 subjects:
   - kind: ServiceAccount
     name: controller-manager
-    namespace: node-maintenance-orchestrator-system
+    namespace: system
 ---
 # Secret access is namespace-scoped.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
   name: webhook-cert-secret-role
-  namespace: node-maintenance-orchestrator-system
+  namespace: system
 rules:
   - apiGroups: [""]
     resources: ["secrets"]
@@ -40,7 +40,7 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
   name: webhook-cert-secret-rolebinding
-  namespace: node-maintenance-orchestrator-system
+  namespace: system
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
@@ -48,4 +48,4 @@ roleRef:
 subjects:
   - kind: ServiceAccount
     name: controller-manager
-    namespace: node-maintenance-orchestrator-system
+    namespace: system

@@ -23,9 +23,9 @@ import (
 )
 
 const (
-	renewBefore           = 30 * 24 * time.Hour
-	certValidity          = 90 * 24 * time.Hour
-	renewalCheckInterval  = 12 * time.Hour
+	renewBefore          = 30 * 24 * time.Hour
+	certValidity         = 90 * 24 * time.Hour
+	renewalCheckInterval = 12 * time.Hour
 )
 
 // CertBootstrapper manages self-signed TLS credentials for the webhook server.
@@ -39,9 +39,6 @@ const (
 //     cert, so the API server trusts every pod's server cert.
 //   - Create races are handled with an AlreadyExists retry: whichever pod wins
 //     the race to create the Secret sets the CA; the loser reads and uses it.
-//
-// TODO: run EnsureCerts on a daily ticker so the CA rotates before the 30-day
-// window without requiring a pod restart.
 type CertBootstrapper struct {
 	Client            client.Client
 	Namespace         string
@@ -186,7 +183,6 @@ func generateCA() (caCert, caKey []byte, err error) {
 	return caCert, caKey, nil
 }
 
-// 
 func generateServerCert(caCertPEM, caKeyPEM []byte, serviceName, namespace string) (serverCert, serverKey []byte, err error) {
 	caBlock, _ := pem.Decode(caCertPEM)
 	if caBlock == nil {

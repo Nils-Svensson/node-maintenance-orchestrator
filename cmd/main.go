@@ -94,7 +94,8 @@ func main() {
 		"Namespace in which the operator runs. Used to store the webhook TLS secret.")
 	flag.StringVar(&webhookServiceName, "webhook-service-name", "node-maintenance-orchestrator-webhook-service",
 		"Service name that fronts the webhook server. Used as the TLS certificate SAN.")
-	flag.StringVar(&webhookConfigName, "webhook-config-name", "node-maintenance-orchestrator-validating-webhook-configuration",
+	flag.StringVar(&webhookConfigName, "webhook-config-name",
+		"node-maintenance-orchestrator-validating-webhook-configuration",
 		"Name of the ValidatingWebhookConfiguration whose caBundle is managed by the operator.")
 	flag.StringVar(&webhookCertSecretName, "webhook-cert-secret-name", "node-maintenance-orchestrator-webhook-cert",
 		"Name of the Secret used to store the shared webhook CA cert and key.")
@@ -243,7 +244,8 @@ func main() {
 
 	if err := (&controller.NodeMaintenancePlanReconciler{
 		Client:   mgr.GetClient(),
-		Recorder: mgr.GetEventRecorderFor("node-maintenance-orchestrator"),
+		// TODO: migrate Recorder field to events.EventRecorder and use mgr.GetEventRecorder.
+		Recorder: mgr.GetEventRecorderFor("node-maintenance-orchestrator"), //nolint:staticcheck
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "NodeMaintenancePlan")
 		os.Exit(1)
