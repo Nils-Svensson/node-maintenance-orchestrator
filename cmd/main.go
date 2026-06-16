@@ -255,7 +255,10 @@ func main() {
 	}
 	if webhookReady {
 		validator := &wh.NodeMaintenancePlanValidator{Client: mgr.GetClient()}
-		webhookServer.Register(
+		// Register via mgr.GetWebhookServer() — this triggers the sync.Once that adds the
+		// server to the manager's runnable group. Calling Register directly on the local
+		// webhookServer variable bypasses that Once and the server never starts.
+		mgr.GetWebhookServer().Register(
 			"/validate-maintenance-nmoo-io-v1alpha1-nodemaintenanceplan",
 			&webhook.Admission{Handler: validator},
 		)
@@ -271,6 +274,12 @@ func main() {
 	if err := mgr.AddReadyzCheck("readyz", healthz.Ping); err != nil {
 		setupLog.Error(err, "unable to set up ready check")
 		os.Exit(1)
+	}
+	if webhookReady {
+		if err := mgr.AddReadyzCheck("webhook", mgr.GetWebhookServer().StartedChecker()); err != nil {
+			setupLog.Error(err, "unable to set up webhook ready check")
+			os.Exit(1)
+		}
 	}
 
 	setupLog.Info("starting manager")
