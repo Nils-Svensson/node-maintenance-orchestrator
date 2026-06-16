@@ -111,7 +111,9 @@ var _ = Describe("Manager", Ordered, func() {
 							"seccompProfile": {"type": "RuntimeDefault"}
 						}
 					}],
-					"serviceAccountName": "%s"
+					"serviceAccountName": "%s",
+					"nodeSelector": {"node-role.kubernetes.io/control-plane": ""},
+					"tolerations": [{"key": "node-role.kubernetes.io/control-plane", "operator": "Exists", "effect": "NoSchedule"}]
 				}
 			}`, token, metricsServiceName, namespace, serviceAccountName))
 		_, err = utils.Run(cmd)

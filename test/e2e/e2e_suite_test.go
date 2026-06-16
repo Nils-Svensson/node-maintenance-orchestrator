@@ -86,7 +86,7 @@ var _ = BeforeSuite(func() {
 	Expect(len(workerNodes)).To(BeNumerically(">=", 5),
 		"e2e tests require at least 5 worker nodes")
 
-	By("waiting for controller pods to be running")
+	By("waiting for controller pods to be running and ready")
 	Eventually(func(g Gomega) {
 		cmd := exec.Command("kubectl", "get",
 			"pods", "-l", "control-plane=controller-manager",
@@ -101,6 +101,13 @@ var _ = BeforeSuite(func() {
 		podNames := utils.GetNonEmptyLines(podOutput)
 		g.Expect(podNames).To(HaveLen(2), "expected 2 controller pods running")
 		controllerPodName = podNames[0]
+		for _, podName := range podNames {
+			cmd = exec.Command("kubectl", "get", "pod", podName, "-n", namespace,
+				"-o", "jsonpath={.status.conditions[?(@.type=='Ready')].status}")
+			output, err := utils.Run(cmd)
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(output).To(Equal("True"), "pod %s should be Ready", podName)
+		}
 	}, 3*time.Minute, 5*time.Second).Should(Succeed())
 
 	By("waiting for the webhook caBundle to be populated")
