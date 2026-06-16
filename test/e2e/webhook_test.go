@@ -16,14 +16,15 @@ import (
 	"github.com/Nils-Svensson/node-maintenance-orchestrator/test/utils"
 )
 
-var _ = Describe("Webhook", Ordered, func() {
-	SetDefaultEventuallyTimeout(2 * time.Minute)
-	SetDefaultEventuallyPollingInterval(2 * time.Second)
+func webhookSuite() {
+	Context("Webhook", Ordered, func() {
+		SetDefaultEventuallyTimeout(2 * time.Minute)
+		SetDefaultEventuallyPollingInterval(2 * time.Second)
 
-	AfterEach(func() {
-		cmd := exec.Command("kubectl", "delete", "nmp", "--all", "--wait=true", "--timeout=60s")
-		_, _ = utils.Run(cmd)
-	})
+		AfterEach(func() {
+			cmd := exec.Command("kubectl", "delete", "nmp", "--all", "--wait=true", "--timeout=60s")
+			_, _ = utils.Run(cmd)
+		})
 
 	It("should reject creation of a plan with nodes that do not exist in the cluster", func() {
 		nmpName := "e2e-webhook-nonexistent"
@@ -262,4 +263,5 @@ spec:
 			g.Expect(output).To(ContainSubstring("does not exist"))
 		}, 2*time.Minute, 5*time.Second).Should(Succeed())
 	})
-})
+	})
+}
