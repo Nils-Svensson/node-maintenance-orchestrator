@@ -2,7 +2,7 @@ package maintenance
 
 import (
 	"github.com/go-logr/logr"
-	"k8s.io/client-go/tools/record"
+	"k8s.io/client-go/tools/events"
 	"k8s.io/utils/clock"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -11,11 +11,11 @@ import (
 type MaintenanceService struct {
 	client   client.Client
 	log      logr.Logger
-	recorder record.EventRecorder
+	recorder events.EventRecorder
 	clock    clock.Clock
 }
 
-func NewMaintenanceService(c client.Client, log logr.Logger, recorder record.EventRecorder, clk clock.Clock) *MaintenanceService {
+func NewMaintenanceService(c client.Client, log logr.Logger, recorder events.EventRecorder, clk clock.Clock) *MaintenanceService {
 	if clk == nil {
 		clk = clock.RealClock{}
 	}

@@ -185,9 +185,9 @@ func (s *MaintenanceService) AdoptNode(ctx context.Context, node *corev1.Node, p
 	}
 
 	if cordon {
-		s.recorder.Eventf(plan, corev1.EventTypeNormal, "NodeCordoned", "node %q adopted and cordoned", node.Name)
+		s.recorder.Eventf(plan, node, corev1.EventTypeNormal, "NodeCordoned", "AdoptNode", "node %q adopted and cordoned", node.Name)
 	} else {
-		s.recorder.Eventf(plan, corev1.EventTypeNormal, "NodeAdopted", "node %q adopted", node.Name)
+		s.recorder.Eventf(plan, node, corev1.EventTypeNormal, "NodeAdopted", "AdoptNode", "node %q adopted", node.Name)
 	}
 	return nil
 }

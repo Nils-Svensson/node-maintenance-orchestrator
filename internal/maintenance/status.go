@@ -211,7 +211,7 @@ func (s *MaintenanceService) warnDisappearedNodes(plan *v1alpha1.NodeMaintenance
 		}
 		if ns.InitialPodCount > 0 && ns.DrainProgress < 100 {
 			s.log.Info("node disappeared from cluster mid-drain", "node", ns.Name)
-			s.recorder.Eventf(plan, corev1.EventTypeWarning, "NodeDisappeared",
+			s.recorder.Eventf(plan, nil, corev1.EventTypeWarning, "NodeDisappeared", "DrainNode",
 				"node %q disappeared from the cluster while drain was in progress", ns.Name)
 		}
 	}
@@ -263,7 +263,7 @@ func (s *MaintenanceService) setNodeNotReadyCondition(plan *v1alpha1.NodeMainten
 		if ns.NotReadySince != nil && s.clock.Since(ns.NotReadySince.Time) >= nodeNotReadyThreshold {
 			notReadyNames = append(notReadyNames, ns.Name)
 			if !drainEnabled {
-				s.recorder.Eventf(plan, corev1.EventTypeWarning, "NodeNotReady",
+				s.recorder.Eventf(plan, nil, corev1.EventTypeWarning, "NodeNotReady", "ObserveNode",
 					"node %q has been NotReady for >%ds; Kubernetes node lifecycle controller is managing pod eviction",
 					ns.Name, int(nodeNotReadyThreshold.Seconds()))
 			}

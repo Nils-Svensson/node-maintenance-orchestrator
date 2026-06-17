@@ -31,8 +31,10 @@ func (s *MaintenanceService) ReconcileDrift(ctx context.Context, plan *v1alpha1.
 			s.log.Info("node uncordoned after maintenance, releasing ownership", "node", node.Name)
 			s.recorder.Eventf(
 				plan,
+				node,
 				corev1.EventTypeNormal,
 				"MaintenanceComplete",
+				"ReleaseNode",
 				"node %q returned to service after maintenance: ownership released",
 				node.Name,
 			)
@@ -44,8 +46,10 @@ func (s *MaintenanceService) ReconcileDrift(ctx context.Context, plan *v1alpha1.
 			s.log.Info("node drifted, releasing ownership", "node", node.Name, "reason", reason)
 			s.recorder.Eventf(
 				plan,
+				node,
 				corev1.EventTypeWarning,
 				"DriftDetected",
+				"ReleaseNode",
 				"node %q drifted (%s): ownership released. Remove and re-add the node to the plan spec to resume management.",
 				node.Name,
 				reason,
@@ -58,8 +62,10 @@ func (s *MaintenanceService) ReconcileDrift(ctx context.Context, plan *v1alpha1.
 			s.log.Info("node externally cordoned while cordon is disabled, skipping", "node", node.Name)
 			s.recorder.Eventf(
 				plan,
+				node,
 				corev1.EventTypeWarning,
 				"DriftDetected",
+				"ObserveNode",
 				"node %q drifted (%s): externally cordoned while cordon is disabled, operator will not interfere",
 				node.Name,
 				reason,

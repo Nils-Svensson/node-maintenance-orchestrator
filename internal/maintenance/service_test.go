@@ -10,7 +10,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/client-go/tools/record"
+	"k8s.io/client-go/tools/events"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
@@ -30,12 +30,12 @@ func init() {
 	}
 }
 
-func newService(objects ...client.Object) (*maintenance.MaintenanceService, *record.FakeRecorder, client.Client) {
+func newService(objects ...client.Object) (*maintenance.MaintenanceService, *events.FakeRecorder, client.Client) {
 	fakeClient := fake.NewClientBuilder().
 		WithScheme(testScheme).
 		WithObjects(objects...).
 		Build()
-	recorder := record.NewFakeRecorder(10)
+	recorder := events.NewFakeRecorder(10)
 	svc := maintenance.NewMaintenanceService(fakeClient, logr.Discard(), recorder, nil)
 	return svc, recorder, fakeClient
 }
@@ -55,7 +55,7 @@ func makePlan(name string, cordonEnabled bool) *v1alpha1.NodeMaintenancePlan {
 	return p
 }
 
-func requireEvent(t *testing.T, recorder *record.FakeRecorder, contains string) {
+func requireEvent(t *testing.T, recorder *events.FakeRecorder, contains string) {
 	t.Helper()
 	select {
 	case event := <-recorder.Events:
@@ -67,7 +67,7 @@ func requireEvent(t *testing.T, recorder *record.FakeRecorder, contains string) 
 	}
 }
 
-func requireNoEvent(t *testing.T, recorder *record.FakeRecorder) {
+func requireNoEvent(t *testing.T, recorder *events.FakeRecorder) {
 	t.Helper()
 	select {
 	case event := <-recorder.Events:

@@ -23,8 +23,10 @@ func (s *MaintenanceService) ReconcileOwnership(ctx context.Context, plan *v1alp
 		)
 		s.recorder.Eventf(
 			plan,
+			node,
 			"Warning",
 			"OwnershipConflict",
+			"SkipNode",
 			"node %q already managed by another plan",
 			node.Name,
 		)
@@ -65,7 +67,7 @@ func (s *MaintenanceService) ReconcileCordon(ctx context.Context, plan *v1alpha1
 				return fmt.Errorf("cordoning node %q: %w", node.Name, err)
 			}
 			if changed {
-				s.recorder.Eventf(plan, corev1.EventTypeNormal, "NodeCordoned", "node %q cordoned", node.Name)
+				s.recorder.Eventf(plan, node, corev1.EventTypeNormal, "NodeCordoned", "CordonNode", "node %q cordoned", node.Name)
 			}
 		} else {
 			// A node cordoned by an external actor (no operator annotation) is left
@@ -78,7 +80,7 @@ func (s *MaintenanceService) ReconcileCordon(ctx context.Context, plan *v1alpha1
 				return fmt.Errorf("uncordoning node %q: %w", node.Name, err)
 			}
 			if changed {
-				s.recorder.Eventf(plan, corev1.EventTypeNormal, "NodeUncordoned", "node %q uncordoned", node.Name)
+				s.recorder.Eventf(plan, node, corev1.EventTypeNormal, "NodeUncordoned", "UncordonNode", "node %q uncordoned", node.Name)
 			}
 		}
 	}
@@ -102,7 +104,7 @@ func (s *MaintenanceService) ReconcileCordon(ctx context.Context, plan *v1alpha1
 		}
 
 		s.log.Info("node removed from plan spec and released", "node", node.Name)
-		s.recorder.Eventf(plan, corev1.EventTypeNormal, "NodeReleased",
+		s.recorder.Eventf(plan, node, corev1.EventTypeNormal, "NodeReleased", "ReleaseNode",
 			"node %q removed from plan spec, uncordoned and released", node.Name)
 	}
 

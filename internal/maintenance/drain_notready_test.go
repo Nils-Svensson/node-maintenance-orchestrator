@@ -9,7 +9,7 @@ import (
 	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/client-go/tools/record"
+	"k8s.io/client-go/tools/events"
 	"k8s.io/utils/clock"
 	clocktesting "k8s.io/utils/clock/testing"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -24,13 +24,13 @@ const notReadyThreshold = 300 * time.Second
 
 // newDrainService builds a MaintenanceService with a controlled clock and a fake
 // client that has status-subresource semantics enabled for NodeMaintenancePlan.
-func newDrainService(clk clock.Clock, objects ...client.Object) (*maintenance.MaintenanceService, *record.FakeRecorder) {
+func newDrainService(clk clock.Clock, objects ...client.Object) (*maintenance.MaintenanceService, *events.FakeRecorder) {
 	fc := fake.NewClientBuilder().
 		WithScheme(testScheme).
 		WithObjects(objects...).
 		WithStatusSubresource(&v1alpha1.NodeMaintenancePlan{}).
 		Build()
-	rec := record.NewFakeRecorder(10)
+	rec := events.NewFakeRecorder(10)
 	return maintenance.NewMaintenanceService(fc, logr.Discard(), rec, clk), rec
 }
 

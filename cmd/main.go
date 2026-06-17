@@ -246,9 +246,8 @@ func main() {
 	}
 
 	if err := (&controller.NodeMaintenancePlanReconciler{
-		Client: mgr.GetClient(),
-		// TODO: migrate Recorder field to events.EventRecorder and use mgr.GetEventRecorder.
-		Recorder: mgr.GetEventRecorderFor("node-maintenance-orchestrator"), //nolint:staticcheck
+		Client:   mgr.GetClient(),
+		Recorder: mgr.GetEventRecorder("node-maintenance-orchestrator"),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "NodeMaintenancePlan")
 		os.Exit(1)

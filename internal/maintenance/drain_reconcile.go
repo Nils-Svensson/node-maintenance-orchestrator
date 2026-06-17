@@ -115,11 +115,11 @@ func (s *MaintenanceService) applyDrainResults(ctx context.Context, plan *v1alph
 			wasDraining := wasNodeDraining(original, r.NodeName)
 			updateNodeDrainStatus(plan, r.NodeName, r.Outcome, nil)
 			if wasDraining {
-				s.recorder.Eventf(plan, corev1.EventTypeNormal, "NodeDrained",
+				s.recorder.Eventf(plan, nil, corev1.EventTypeNormal, "NodeDrained", "CompleteDrain",
 					"node %q has been fully drained", r.NodeName)
 			}
 			if markNodeReadyForMaintenance(plan, r.NodeName) {
-				s.recorder.Eventf(plan, corev1.EventTypeNormal, "NodeReadyForMaintenance",
+				s.recorder.Eventf(plan, nil, corev1.EventTypeNormal, "NodeReadyForMaintenance", "CompleteDrain",
 					"node %q is ready for maintenance", r.NodeName)
 			}
 
@@ -143,7 +143,7 @@ func (s *MaintenanceService) applyDrainResults(ctx context.Context, plan *v1alph
 			anyBlocked = true
 			updateNodeDrainStatus(plan, r.NodeName, r.Outcome, stuckIssues)
 			s.log.Info("drain stuck: pods not terminating", "node", r.NodeName, "stuckPods", r.Outcome.StuckTerminating)
-			s.recorder.Eventf(plan, corev1.EventTypeWarning, "DrainBlocked",
+			s.recorder.Eventf(plan, nil, corev1.EventTypeWarning, "DrainBlocked", "DrainNode",
 				"node %q: %d pod(s) stuck in Terminating beyond grace period", r.NodeName, r.Outcome.StuckTerminating)
 
 		case errors.As(r.Err, &notReady):
@@ -155,7 +155,7 @@ func (s *MaintenanceService) applyDrainResults(ctx context.Context, plan *v1alph
 			if yielded {
 				s.log.Info("node NotReady beyond threshold, yielding to node lifecycle controller",
 					"node", r.NodeName, "notReadySince", notReady.notReadySince)
-				s.recorder.Eventf(plan, corev1.EventTypeWarning, "NodeNotReady",
+				s.recorder.Eventf(plan, nil, corev1.EventTypeWarning, "NodeNotReady", "YieldDrain",
 					"node %q has been NotReady for >%ds; yielding drain to Kubernetes node lifecycle controller",
 					r.NodeName, int(nodeNotReadyThreshold.Seconds()))
 			} else {
@@ -168,14 +168,14 @@ func (s *MaintenanceService) applyDrainResults(ctx context.Context, plan *v1alph
 			issues := append(blockedPodIssues(blocked), stuckIssues...)
 			updateNodeDrainStatus(plan, r.NodeName, r.Outcome, issues)
 			s.log.Info("drain blocked", "node", r.NodeName, "reason", blocked.Error())
-			s.recorder.Eventf(plan, corev1.EventTypeWarning, "DrainBlocked",
+			s.recorder.Eventf(plan, nil, corev1.EventTypeWarning, "DrainBlocked", "DrainNode",
 				"node %q: %s", r.NodeName, blocked.Error())
 
 		default:
 			allDone = false
 			updateNodeDrainStatus(plan, r.NodeName, r.Outcome, stuckIssues)
 			s.log.Error(r.Err, "drain error", "node", r.NodeName)
-			s.recorder.Eventf(plan, corev1.EventTypeWarning, "DrainError",
+			s.recorder.Eventf(plan, nil, corev1.EventTypeWarning, "DrainError", "DrainNode",
 				"node %q: %v", r.NodeName, r.Err)
 		}
 	}
@@ -195,7 +195,7 @@ func (s *MaintenanceService) applyDrainResults(ctx context.Context, plan *v1alph
 					"TimedOut", "Drain stopped due to timeout")
 				setCondition(plan, v1alpha1.ConditionDrainSucceeded, metav1.ConditionFalse,
 					"TimedOut", "Drain timed out before completion")
-				s.recorder.Eventf(plan, corev1.EventTypeWarning, "DrainTimedOut",
+				s.recorder.Eventf(plan, nil, corev1.EventTypeWarning, "DrainTimedOut", "AbortDrain",
 					"drain deadline of %d minute(s) exceeded", *plan.Spec.Drain.TimeoutMinutes)
 				if err := s.client.Status().Patch(ctx, plan, client.MergeFrom(original)); err != nil {
 					return noRequeue, fmt.Errorf("patching drain timeout status: %w", err)
@@ -213,7 +213,7 @@ func (s *MaintenanceService) applyDrainResults(ctx context.Context, plan *v1alph
 	plan.Status.AllNodesReadyForMaintenance = allNodesReady(plan)
 	if !wasAllReady && plan.Status.AllNodesReadyForMaintenance {
 		s.log.Info("all nodes ready for maintenance", "plan", plan.Name)
-		s.recorder.Eventf(plan, corev1.EventTypeNormal, "AllNodesReadyForMaintenance",
+		s.recorder.Eventf(plan, nil, corev1.EventTypeNormal, "AllNodesReadyForMaintenance", "ReconcileDrain",
 			"all managed nodes are ready for maintenance")
 	}
 

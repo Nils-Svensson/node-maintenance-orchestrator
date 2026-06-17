@@ -28,8 +28,10 @@ func (s *MaintenanceService) CleanUp(ctx context.Context, plan *v1alpha1.NodeMai
 		}
 		s.recorder.Eventf(
 			plan,
+			node,
 			"Normal",
 			"NodeReleased",
+			"ReleaseNode",
 			"node %q uncordoned and released as part of plan deletion",
 			node.Name,
 		)

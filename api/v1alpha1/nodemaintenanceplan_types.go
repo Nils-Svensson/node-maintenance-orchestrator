@@ -362,7 +362,3 @@ type NodeMaintenancePlanList struct {
 	metav1.ListMeta `json:"metadata,omitempty"`
 	Items           []NodeMaintenancePlan `json:"items"`
 }
-
-func init() {
-	SchemeBuilder.Register(&NodeMaintenancePlan{}, &NodeMaintenancePlanList{})
-}
