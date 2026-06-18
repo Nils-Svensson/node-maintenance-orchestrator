@@ -90,7 +90,7 @@ func main() {
 		"If set, HTTP/2 will be enabled for the metrics and webhook servers")
 	flag.BoolVar(&webhookEnabled, "webhook-enabled", false,
 		"Enable the validating webhook server. Requires the ValidatingWebhookConfiguration to be pre-installed.")
-	flag.StringVar(&operatorNamespace, "operator-namespace", "node-maintenance-orchestrator-system",
+	flag.StringVar(&operatorNamespace, "operator-namespace", "nmo-system",
 		"Namespace in which the operator runs. Used to store the webhook TLS secret.")
 	flag.StringVar(&webhookServiceName, "webhook-service-name", "node-maintenance-orchestrator-webhook-service",
 		"Service name that fronts the webhook server. Used as the TLS certificate SAN.")

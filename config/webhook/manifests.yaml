@@ -9,7 +9,7 @@ webhooks:
       # caBundle is intentionally empty — the operator patches it on startup.
       service:
         name: webhook-service
-        namespace: node-maintenance-orchestrator-system
+        namespace: nmo-system
         path: /validate-maintenance-nmoo-io-v1alpha1-nodemaintenanceplan
     rules:
       - apiGroups: ["maintenance.nmoo.io"]
