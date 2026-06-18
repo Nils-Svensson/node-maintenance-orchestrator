@@ -19,7 +19,7 @@ import (
 )
 
 const (
-	namespace              = "node-maintenance-orchestrator-system"
+	namespace              = "nmo-system"
 	serviceAccountName     = "node-maintenance-orchestrator-controller-manager"
 	metricsServiceName     = "node-maintenance-orchestrator-ctrl-manager-metrics-service"
 	metricsRoleBindingName = "node-maintenance-orchestrator-metrics-binding"
