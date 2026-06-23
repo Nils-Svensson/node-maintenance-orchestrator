@@ -31,3 +31,6 @@ go.work
 
 # Local postmortems — not for public repo
 docs/postmortem-*.md
+
+# Mac
+.DS_Store

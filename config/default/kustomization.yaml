@@ -8,6 +8,7 @@ resources:
 - ../manager
 - ../webhook
 - metrics_service.yaml
+- ../prometheus
 
 patches:
 - path: manager_metrics_patch.yaml
