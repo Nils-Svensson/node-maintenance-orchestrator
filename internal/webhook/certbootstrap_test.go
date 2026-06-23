@@ -1,11 +1,13 @@
 package webhook
 
 import (
+	cryptorand "crypto/rand"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/x509"
 	"encoding/pem"
 	"math/big"
+	"net"
 	"testing"
 	"time"
 
@@ -15,19 +17,23 @@ import (
 // pemCACertWithExpiry generates a minimal self-signed CA cert expiring at notAfter.
 func pemCACertWithExpiry(t *testing.T, notAfter time.Time) []byte {
 	t.Helper()
-	priv, err := ecdsa.GenerateKey(elliptic.P256(), nil)
+	priv, err := ecdsa.GenerateKey(elliptic.P256(), cryptorand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	serial, err := cryptorand.Int(cryptorand.Reader, new(big.Int).Lsh(big.NewInt(1), 128))
 	if err != nil {
 		t.Fatal(err)
 	}
 	tmpl := &x509.Certificate{
-		SerialNumber:          big.NewInt(99),
+		SerialNumber:          serial,
 		NotBefore:             time.Now().Add(-time.Minute),
 		NotAfter:              notAfter,
 		IsCA:                  true,
 		BasicConstraintsValid: true,
 		KeyUsage:              x509.KeyUsageCertSign,
 	}
-	der, err := x509.CreateCertificate(nil, tmpl, tmpl, &priv.PublicKey, priv)
+	der, err := x509.CreateCertificate(cryptorand.Reader, tmpl, tmpl, &priv.PublicKey, priv)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -75,7 +81,7 @@ func TestGenerateServerCert(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	serverCert, serverKey, err := generateServerCert(caCert, caKey, "webhook-svc", "nmo-system")
+	serverCert, serverKey, err := generateServerCert(caCert, caKey, "webhook-svc", "nmo-system", nil, nil)
 	if err != nil {
 		t.Fatalf("generateServerCert: %v", err)
 	}
@@ -140,12 +146,63 @@ func TestGenerateServerCert(t *testing.T) {
 	}
 
 	// Invalid CA cert PEM must return an error.
-	if _, _, err := generateServerCert([]byte("bad"), caKey, "svc", "ns"); err == nil {
+	if _, _, err := generateServerCert([]byte("bad"), caKey, "svc", "ns", nil, nil); err == nil {
 		t.Error("want error for invalid CA cert PEM")
 	}
 	// Invalid CA key PEM must return an error.
-	if _, _, err := generateServerCert(caCert, []byte("bad"), "svc", "ns"); err == nil {
+	if _, _, err := generateServerCert(caCert, []byte("bad"), "svc", "ns", nil, nil); err == nil {
 		t.Error("want error for invalid CA key PEM")
+	}
+}
+
+func TestGenerateServerCertMetricsSANs(t *testing.T) {
+	caCert, caKey, err := generateCA()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	extraDNS := []string{"localhost"}
+	extraIPs := []net.IP{net.IPv4(127, 0, 0, 1)}
+	serverCert, _, err := generateServerCert(caCert, caKey, "metrics-svc", "nmo-system", extraDNS, extraIPs)
+	if err != nil {
+		t.Fatalf("generateServerCert: %v", err)
+	}
+
+	block, _ := pem.Decode(serverCert)
+	cert, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		t.Fatalf("parse cert: %v", err)
+	}
+
+	dnsSet := make(map[string]bool, len(cert.DNSNames))
+	for _, n := range cert.DNSNames {
+		dnsSet[n] = true
+	}
+	if !dnsSet["localhost"] {
+		t.Errorf("want localhost in DNSNames; got %v", cert.DNSNames)
+	}
+
+	hasLoopback := false
+	for _, ip := range cert.IPAddresses {
+		if ip.Equal(net.IPv4(127, 0, 0, 1)) {
+			hasLoopback = true
+		}
+	}
+	if !hasLoopback {
+		t.Errorf("want 127.0.0.1 in IPAddresses; got %v", cert.IPAddresses)
+	}
+
+	// Cert must verify against localhost for port-forward debugging.
+	caBlock, _ := pem.Decode(caCert)
+	caParsed, _ := x509.ParseCertificate(caBlock.Bytes)
+	pool := x509.NewCertPool()
+	pool.AddCert(caParsed)
+	if _, err := cert.Verify(x509.VerifyOptions{
+		Roots:       pool,
+		DNSName:     "localhost",
+		CurrentTime: time.Now(),
+	}); err != nil {
+		t.Errorf("cert does not verify for localhost: %v", err)
 	}
 }
 

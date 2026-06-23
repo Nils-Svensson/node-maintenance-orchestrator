@@ -50,6 +50,10 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- printf "%s-validating-webhook-configuration" (include "nmo.fullname" .) }}
 {{- end }}
 
-{{- define "nmo.webhookCertSecretName" -}}
-{{- printf "%s-webhook-cert" (include "nmo.fullname" .) }}
+{{- define "nmo.tlsCertSecretName" -}}
+{{- printf "%s-tls-cert" (include "nmo.fullname" .) }}
+{{- end }}
+
+{{- define "nmo.metricsServiceName" -}}
+{{- printf "%s-metrics" (include "nmo.fullname" .) }}
 {{- end }}

@@ -32,16 +32,19 @@ spec:
             - --leader-elect
             {{- end }}
             - --health-probe-bind-address=:8081
+            - --tls-cert-secret-name={{ include "nmo.tlsCertSecretName" . }}
+            - --operator-namespace={{ .Release.Namespace }}
             {{- if .Values.metrics.enabled }}
             - --metrics-bind-address=:{{ .Values.metrics.service.port }}
-            - --metrics-secure=false
+            - --metrics-service-name={{ include "nmo.metricsServiceName" . }}
+            {{- if .Values.metrics.certPath }}
+            - --metrics-cert-path={{ .Values.metrics.certPath }}
+            {{- end }}
             {{- end }}
             {{- if .Values.webhook.enabled }}
             - --webhook-enabled=true
-            - --operator-namespace={{ .Release.Namespace }}
             - --webhook-service-name={{ include "nmo.webhookServiceName" . }}
             - --webhook-config-name={{ include "nmo.webhookConfigName" . }}
-            - --webhook-cert-secret-name={{ include "nmo.webhookCertSecretName" . }}
             {{- if .Values.webhook.certPath }}
             - --webhook-cert-path={{ .Values.webhook.certPath }}
             {{- end }}
@@ -72,12 +75,12 @@ spec:
             periodSeconds: 10
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
-          {{- if .Values.webhook.enabled }}
+          {{- if or .Values.webhook.enabled .Values.metrics.enabled }}
           volumeMounts:
             - name: tmp
               mountPath: /tmp
           {{- end }}
-      {{- if .Values.webhook.enabled }}
+      {{- if or .Values.webhook.enabled .Values.metrics.enabled }}
       volumes:
         - name: tmp
           emptyDir: {}

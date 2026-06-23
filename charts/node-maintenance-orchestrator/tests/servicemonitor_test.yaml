@@ -1,0 +1,70 @@
+suite: ServiceMonitor
+templates:
+  - templates/servicemonitor.yaml
+release:
+  name: my-release
+  namespace: nmo-system
+
+tests:
+  - it: does not create ServiceMonitor when disabled
+    set:
+      metrics.serviceMonitor.enabled: false
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: does not create ServiceMonitor when metrics disabled
+    set:
+      metrics.enabled: false
+      metrics.serviceMonitor.enabled: true
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: creates ServiceMonitor when metrics and serviceMonitor enabled
+    set:
+      metrics.serviceMonitor.enabled: true
+    asserts:
+      - hasDocuments:
+          count: 1
+      - equal:
+          path: metadata.name
+          value: my-release-node-maintenance-orchestrator
+      - equal:
+          path: metadata.namespace
+          value: nmo-system
+
+  - it: scrapes https port with insecureSkipVerify and bearer token
+    set:
+      metrics.serviceMonitor.enabled: true
+    asserts:
+      - equal:
+          path: spec.endpoints[0].port
+          value: https
+      - equal:
+          path: spec.endpoints[0].scheme
+          value: https
+      - equal:
+          path: spec.endpoints[0].tlsConfig.insecureSkipVerify
+          value: true
+      - equal:
+          path: spec.endpoints[0].bearerTokenFile
+          value: /var/run/secrets/kubernetes.io/serviceaccount/token
+
+  - it: respects custom scrape interval
+    set:
+      metrics.serviceMonitor.enabled: true
+      metrics.serviceMonitor.interval: 60s
+    asserts:
+      - equal:
+          path: spec.endpoints[0].interval
+          value: 60s
+
+  - it: adds additionalLabels to ServiceMonitor metadata
+    set:
+      metrics.serviceMonitor.enabled: true
+      metrics.serviceMonitor.additionalLabels.release: prometheus
+    asserts:
+      - equal:
+          path: metadata.labels.release
+          value: prometheus

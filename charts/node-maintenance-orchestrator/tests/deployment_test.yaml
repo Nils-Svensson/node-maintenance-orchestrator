@@ -40,6 +40,38 @@ tests:
           path: spec.template.spec.containers[0].args
           content: "--leader-elect"
 
+  - it: always includes tls-cert-secret-name arg
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: "--tls-cert-secret-name=my-release-node-maintenance-orchestrator-tls-cert"
+
+  - it: always includes operator-namespace arg
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: "--operator-namespace=nmo-system"
+
+  - it: includes metrics args when metrics enabled
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: "--metrics-bind-address=:8443"
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: "--metrics-service-name=my-release-node-maintenance-orchestrator-metrics"
+
+  - it: omits metrics args when metrics disabled
+    set:
+      metrics.enabled: false
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].args
+          content: "--metrics-bind-address=:8443"
+      - notContains:
+          path: spec.template.spec.containers[0].args
+          content: "--metrics-service-name=my-release-node-maintenance-orchestrator-metrics"
+
   - it: includes all webhook args when webhook is enabled
     asserts:
       - contains:
@@ -47,18 +79,12 @@ tests:
           content: "--webhook-enabled=true"
       - contains:
           path: spec.template.spec.containers[0].args
-          content: "--operator-namespace=nmo-system"
-      - contains:
-          path: spec.template.spec.containers[0].args
           content: "--webhook-service-name=my-release-node-maintenance-orchestrator-webhook-service"
       - contains:
           path: spec.template.spec.containers[0].args
           content: "--webhook-config-name=my-release-node-maintenance-orchestrator-validating-webhook-configuration"
-      - contains:
-          path: spec.template.spec.containers[0].args
-          content: "--webhook-cert-secret-name=my-release-node-maintenance-orchestrator-webhook-cert"
 
-  - it: exposes port 9443 and mounts /tmp when webhook is enabled
+  - it: exposes port 9443 when webhook is enabled
     asserts:
       - contains:
           path: spec.template.spec.containers[0].ports
@@ -66,6 +92,9 @@ tests:
             containerPort: 9443
             name: webhook-server
             protocol: TCP
+
+  - it: mounts /tmp when webhook or metrics is enabled
+    asserts:
       - contains:
           path: spec.template.spec.containers[0].volumeMounts
           content:
@@ -77,7 +106,17 @@ tests:
             name: tmp
             emptyDir: {}
 
-  - it: omits webhook args, port, and tmp volume when webhook is disabled
+  - it: mounts /tmp when only metrics is enabled
+    set:
+      webhook.enabled: false
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: tmp
+            mountPath: /tmp
+
+  - it: omits webhook port and args when webhook is disabled
     set:
       webhook.enabled: false
     asserts:
@@ -86,6 +125,12 @@ tests:
           content: "--webhook-enabled=true"
       - isNull:
           path: spec.template.spec.containers[0].ports
+
+  - it: omits /tmp volume when both webhook and metrics are disabled
+    set:
+      webhook.enabled: false
+      metrics.enabled: false
+    asserts:
       - isNull:
           path: spec.template.spec.containers[0].volumeMounts
       - isNull:

@@ -24,7 +24,7 @@ const (
 	metricsServiceName     = "node-maintenance-orchestrator-ctrl-manager-metrics-service"
 	metricsRoleBindingName = "node-maintenance-orchestrator-metrics-binding"
 	webhookConfigName      = "node-maintenance-orchestrator-validating-webhook-configuration"
-	webhookSecretName      = "node-maintenance-orchestrator-webhook-cert"
+	webhookSecretName      = "node-maintenance-orchestrator-tls-cert"
 	projectImage           = "example.com/node-maintenance-orchestrator:v0.0.1"
 )
 
@@ -60,6 +60,15 @@ var _ = Describe("Manager", Ordered, func() {
 		cmd = exec.Command("make", "install")
 		_, err = utils.Run(cmd)
 		Expect(err).NotTo(HaveOccurred(), "Failed to install CRDs")
+
+		// Install the ServiceMonitor CRD so the API server accepts the ServiceMonitor
+		// resource included in config/prometheus. The full Prometheus Operator is not
+		// needed; only the CRD registration is required for `make deploy` to succeed.
+		By("installing Prometheus Operator ServiceMonitor CRD")
+		cmd = exec.Command("kubectl", "apply", "--server-side",
+			"-f", "https://raw.githubusercontent.com/prometheus-operator/prometheus-operator/main/example/prometheus-operator-crd/monitoring.coreos.com_servicemonitors.yaml")
+		_, err = utils.Run(cmd)
+		Expect(err).NotTo(HaveOccurred(), "Failed to install ServiceMonitor CRD")
 
 		By("deploying the controller-manager")
 		cmd = exec.Command("make", "deploy", fmt.Sprintf("IMG=%s", projectImage))

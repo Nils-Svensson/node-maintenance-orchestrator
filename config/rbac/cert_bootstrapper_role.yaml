@@ -1,10 +1,12 @@
 ---
 # Permissions required for the operator's self-signed cert bootstrapper.
+# The bootstrapper stores a shared CA in a Secret regardless of which server
+# certs are generated, so this Role is needed for both webhook and metrics TLS.
 # Scoped to the specific webhook config name to limit blast radius.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: webhook-cert-role
+  name: cert-bootstrapper-role
 rules:
   - apiGroups: ["admissionregistration.k8s.io"]
     resources: ["validatingwebhookconfigurations"]
@@ -14,11 +16,11 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: webhook-cert-rolebinding
+  name: cert-bootstrapper-rolebinding
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: webhook-cert-role
+  name: cert-bootstrapper-role
 subjects:
   - kind: ServiceAccount
     name: controller-manager
@@ -30,7 +32,7 @@ subjects:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
-  name: webhook-cert-secret-role
+  name: cert-bootstrapper-secret-role
   namespace: system
 rules:
   - apiGroups: [""]
@@ -38,18 +40,18 @@ rules:
     verbs: ["create"]
   - apiGroups: [""]
     resources: ["secrets"]
-    resourceNames: ["node-maintenance-orchestrator-webhook-cert"]
+    resourceNames: ["node-maintenance-orchestrator-tls-cert"]
     verbs: ["get", "patch"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: webhook-cert-secret-rolebinding
+  name: cert-bootstrapper-secret-rolebinding
   namespace: system
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
-  name: webhook-cert-secret-role
+  name: cert-bootstrapper-secret-role
 subjects:
   - kind: ServiceAccount
     name: controller-manager

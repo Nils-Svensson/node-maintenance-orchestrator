@@ -70,7 +70,7 @@ func main() {
 	var operatorNamespace string
 	var webhookServiceName string
 	var webhookConfigName string
-	var webhookCertSecretName string
+	var tlsCertSecretName string
 	flag.StringVar(&metricsAddr, "metrics-bind-address", "0", "The address the metrics endpoint binds to. "+
 		"Use :8443 for HTTPS or :8080 for HTTP, or leave as 0 to disable the metrics service.")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
@@ -97,8 +97,11 @@ func main() {
 	flag.StringVar(&webhookConfigName, "webhook-config-name",
 		"node-maintenance-orchestrator-validating-webhook-configuration",
 		"Name of the ValidatingWebhookConfiguration whose caBundle is managed by the operator.")
-	flag.StringVar(&webhookCertSecretName, "webhook-cert-secret-name", "node-maintenance-orchestrator-webhook-cert",
-		"Name of the Secret used to store the shared webhook CA cert and key.")
+	flag.StringVar(&tlsCertSecretName, "tls-cert-secret-name", "node-maintenance-orchestrator-tls-cert",
+		"Name of the Secret used to store the shared TLS CA cert and key (used by both webhook and metrics cert bootstrapper).")
+	var metricsServiceName string
+	flag.StringVar(&metricsServiceName, "metrics-service-name", "node-maintenance-orchestrator-ctrl-manager-metrics-service",
+		"Service name that fronts the metrics server. Used as the TLS certificate SAN.")
 	opts := zap.Options{
 		Development: true,
 	}
@@ -124,40 +127,55 @@ func main() {
 
 	restConfig := ctrl.GetConfigOrDie()
 
-	// Bootstrap self-signed webhook certs when no external cert path is provided.
-	// The bootstrapper writes certs to certDir and patches the ValidatingWebhookConfiguration
-	// caBundle so the API server trusts them.
+	// Bootstrap self-signed TLS certs when no external cert paths are provided.
+	// The bootstrapper shares a single CA Secret across all server certs and
+	// patches the ValidatingWebhookConfiguration caBundle for the webhook.
 	const defaultWebhookCertDir = "/tmp/k8s-webhook-server/serving-certs"
+	const defaultMetricsCertDir = "/tmp/k8s-metrics-server/serving-certs"
 	var bootstrapper *wh.CertBootstrapper
-	if webhookEnabled && len(webhookCertPath) == 0 {
+	needsBootstrap := (webhookEnabled && len(webhookCertPath) == 0) || (secureMetrics && len(metricsCertPath) == 0)
+	if needsBootstrap {
 		bootstrapClient, err := client.New(restConfig, client.Options{Scheme: scheme})
 		if err != nil {
 			setupLog.Error(err, "unable to create bootstrap client")
 			os.Exit(1)
 		}
-		bootstrapper = &wh.CertBootstrapper{
-			Client:            bootstrapClient,
-			Namespace:         operatorNamespace,
-			CertDir:           defaultWebhookCertDir,
-			SecretName:        webhookCertSecretName,
-			WebhookConfigName: webhookConfigName,
-			ServiceName:       webhookServiceName,
+		b := &wh.CertBootstrapper{
+			Client:     bootstrapClient,
+			Namespace:  operatorNamespace,
+			SecretName: tlsCertSecretName,
 		}
-		setupLog.Info("bootstrapping webhook certificates",
+		if webhookEnabled && len(webhookCertPath) == 0 {
+			b.CertDir = defaultWebhookCertDir
+			b.ServiceName = webhookServiceName
+			b.WebhookConfigName = webhookConfigName
+		}
+		if secureMetrics && len(metricsCertPath) == 0 {
+			b.MetricsCertDir = defaultMetricsCertDir
+			b.MetricsServiceName = metricsServiceName
+		}
+		setupLog.Info("bootstrapping certificates",
 			"namespace", operatorNamespace,
-			"secretName", webhookCertSecretName,
-			"webhookConfigName", webhookConfigName,
-			"serviceName", webhookServiceName,
-			"certDir", defaultWebhookCertDir)
+			"secretName", tlsCertSecretName,
+			"webhook", webhookEnabled,
+			"secureMetrics", secureMetrics)
 		bootstrapCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
-		if err := bootstrapper.EnsureCerts(bootstrapCtx); err != nil {
+		if err := b.EnsureCerts(bootstrapCtx); err != nil {
 			// Non-fatal: bootstrap fails when running outside the cluster (e.g. make run).
-			setupLog.Error(err, "webhook cert bootstrap failed; running without webhook validation")
-			bootstrapper = nil
+			setupLog.Error(err, "cert bootstrap failed; running without managed certificates")
 		} else {
-			webhookCertPath = defaultWebhookCertDir
-			setupLog.Info("webhook certificates bootstrapped", "certDir", webhookCertPath)
+			if b.CertDir != "" {
+				webhookCertPath = defaultWebhookCertDir
+			}
+			if b.MetricsCertDir != "" {
+				metricsCertPath = defaultMetricsCertDir
+				setupLog.Info("metrics certificates bootstrapped", "certDir", defaultMetricsCertDir)
+			}
+			if b.CertDir != "" {
+				setupLog.Info("webhook certificates bootstrapped", "certDir", defaultWebhookCertDir)
+			}
+			bootstrapper = b
 		}
 	}
 

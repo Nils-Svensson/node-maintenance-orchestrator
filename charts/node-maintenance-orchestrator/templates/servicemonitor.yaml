@@ -14,7 +14,10 @@ spec:
     matchLabels:
       {{- include "nmo.selectorLabels" . | nindent 6 }}
   endpoints:
-    - port: http
-      scheme: http
+    - port: https
+      scheme: https
+      bearerTokenFile: /var/run/secrets/kubernetes.io/serviceaccount/token
+      tlsConfig:
+        insecureSkipVerify: true
       interval: {{ .Values.metrics.serviceMonitor.interval }}
 {{- end }}

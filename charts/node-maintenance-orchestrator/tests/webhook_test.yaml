@@ -81,18 +81,45 @@ tests:
       - hasDocuments:
           count: 0
 
-  # Webhook RBAC
-  - it: creates 4 webhook RBAC resources when webhook is enabled
+  # Cert-bootstrapper RBAC
+  - it: always creates 2 cert-bootstrapper RBAC resources (Secret Role + RoleBinding)
     templates:
-      - templates/webhook-rbac.yaml
+      - templates/cert-bootstrapper-rbac.yaml
+    set:
+      webhook.enabled: false
+    asserts:
+      - hasDocuments:
+          count: 2
+
+  - it: creates 4 cert-bootstrapper RBAC resources when webhook is enabled
+    templates:
+      - templates/cert-bootstrapper-rbac.yaml
     asserts:
       - hasDocuments:
           count: 4
 
+  - it: Role is scoped to the named TLS cert Secret
+    templates:
+      - templates/cert-bootstrapper-rbac.yaml
+    documentIndex: 0
+    asserts:
+      - equal:
+          path: kind
+          value: Role
+      - equal:
+          path: metadata.namespace
+          value: nmo-system
+      - equal:
+          path: rules[1].resourceNames[0]
+          value: my-release-node-maintenance-orchestrator-tls-cert
+      - equal:
+          path: rules[1].verbs
+          value: [get, patch]
+
   - it: ClusterRole is scoped to the named ValidatingWebhookConfiguration
     templates:
-      - templates/webhook-rbac.yaml
-    documentIndex: 0
+      - templates/cert-bootstrapper-rbac.yaml
+    documentIndex: 2
     asserts:
       - equal:
           path: kind
@@ -106,8 +133,8 @@ tests:
 
   - it: ClusterRoleBinding references the correct ClusterRole and ServiceAccount
     templates:
-      - templates/webhook-rbac.yaml
-    documentIndex: 1
+      - templates/cert-bootstrapper-rbac.yaml
+    documentIndex: 3
     asserts:
       - equal:
           path: kind
@@ -121,30 +148,3 @@ tests:
       - equal:
           path: subjects[0].namespace
           value: nmo-system
-
-  - it: Role is scoped to the named webhook cert Secret
-    templates:
-      - templates/webhook-rbac.yaml
-    documentIndex: 2
-    asserts:
-      - equal:
-          path: kind
-          value: Role
-      - equal:
-          path: metadata.namespace
-          value: nmo-system
-      - equal:
-          path: rules[0].resourceNames[0]
-          value: my-release-node-maintenance-orchestrator-webhook-cert
-      - equal:
-          path: rules[0].verbs
-          value: [get, create, patch]
-
-  - it: does not create webhook RBAC when webhook is disabled
-    templates:
-      - templates/webhook-rbac.yaml
-    set:
-      webhook.enabled: false
-    asserts:
-      - hasDocuments:
-          count: 0

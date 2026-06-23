@@ -1,0 +1,67 @@
+# Role: get + create + patch the TLS CA Secret (cert bootstrap and rotation).
+# Required for both webhook and metrics cert bootstrapping — the bootstrapper
+# stores a shared CA in this Secret regardless of which server certs are generated.
+# create must be in a separate rule without resourceNames — Kubernetes RBAC does
+# not evaluate resourceNames for create requests (the resource has no name yet).
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "nmo.fullname" . }}-tls-cert-role
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "nmo.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: [secrets]
+    verbs: [create]
+  - apiGroups: [""]
+    resources: [secrets]
+    resourceNames: [{{ include "nmo.tlsCertSecretName" . | quote }}]
+    verbs: [get, patch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "nmo.fullname" . }}-tls-cert-rolebinding
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "nmo.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "nmo.fullname" . }}-tls-cert-role
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "nmo.serviceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
+{{- if .Values.webhook.enabled }}
+---
+# ClusterRole: get + patch the ValidatingWebhookConfiguration (caBundle rotation).
+# Scoped to a single named resource to minimise blast radius.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "nmo.fullname" . }}-webhook-config-role
+  labels:
+    {{- include "nmo.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [admissionregistration.k8s.io]
+    resources: [validatingwebhookconfigurations]
+    resourceNames: [{{ include "nmo.webhookConfigName" . | quote }}]
+    verbs: [get, patch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "nmo.fullname" . }}-webhook-config-rolebinding
+  labels:
+    {{- include "nmo.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "nmo.fullname" . }}-webhook-config-role
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "nmo.serviceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
+{{- end }}

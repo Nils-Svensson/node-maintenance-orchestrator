@@ -284,70 +284,10 @@
       }
     },
     {
-      "id": 9,
-      "title": "Node Counts Over Time",
-      "type": "timeseries",
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
-      "datasource": { "type": "prometheus", "uid": "${datasource}" },
-      "targets": [
-        {
-          "expr": "sum by (plan) (nmo_plan_draining_nodes_total{plan=~\"$plan\"})",
-          "legendFormat": "{{plan}}: draining",
-          "refId": "A"
-        },
-        {
-          "expr": "sum by (plan) (nmo_plan_ready_nodes_total{plan=~\"$plan\"})",
-          "legendFormat": "{{plan}}: ready",
-          "refId": "B"
-        },
-        {
-          "expr": "sum by (plan) (nmo_plan_blocked_nodes_total{plan=~\"$plan\"})",
-          "legendFormat": "{{plan}}: blocked",
-          "refId": "C"
-        }
-      ],
-      "options": {
-        "legend": { "displayMode": "list", "placement": "bottom" },
-        "tooltip": { "mode": "multi" }
-      },
-      "fieldConfig": {
-        "defaults": {
-          "custom": { "lineWidth": 2, "fillOpacity": 5 }
-        },
-        "overrides": [
-          { "matcher": { "id": "byRegexp", "options": ".*draining" }, "properties": [{ "id": "color", "value": { "fixedColor": "yellow", "mode": "fixed" } }] },
-          { "matcher": { "id": "byRegexp", "options": ".*ready" }, "properties": [{ "id": "color", "value": { "fixedColor": "green", "mode": "fixed" } }] },
-          { "matcher": { "id": "byRegexp", "options": ".*blocked" }, "properties": [{ "id": "color", "value": { "fixedColor": "red", "mode": "fixed" } }] }
-        ]
-      }
-    },
-    {
-      "id": 10,
-      "title": "Evicted Pods per Node",
-      "type": "timeseries",
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
-      "datasource": { "type": "prometheus", "uid": "${datasource}" },
-      "targets": [{
-        "expr": "sum by (plan, node) (nmo_node_evicted_pods_total{plan=~\"$plan\"})",
-        "legendFormat": "{{plan}} / {{node}}",
-        "refId": "A"
-      }],
-      "options": {
-        "legend": { "displayMode": "list", "placement": "bottom" },
-        "tooltip": { "mode": "multi" }
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short",
-          "custom": { "lineWidth": 2, "fillOpacity": 10 }
-        }
-      }
-    },
-    {
       "id": 11,
       "title": "Per-Node Details",
       "type": "table",
-      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 24 },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 16 },
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "targets": [
         {
