@@ -98,9 +98,11 @@ func main() {
 		"node-maintenance-orchestrator-validating-webhook-configuration",
 		"Name of the ValidatingWebhookConfiguration whose caBundle is managed by the operator.")
 	flag.StringVar(&tlsCertSecretName, "tls-cert-secret-name", "node-maintenance-orchestrator-tls-cert",
-		"Name of the Secret used to store the shared TLS CA cert and key (used by both webhook and metrics cert bootstrapper).")
+		"Name of the Secret used to store the shared TLS CA cert and key "+
+			"(used by both webhook and metrics cert bootstrapper).")
 	var metricsServiceName string
-	flag.StringVar(&metricsServiceName, "metrics-service-name", "node-maintenance-orchestrator-ctrl-manager-metrics-service",
+	flag.StringVar(&metricsServiceName, "metrics-service-name",
+		"node-maintenance-orchestrator-ctrl-manager-metrics-service",
 		"Service name that fronts the metrics server. Used as the TLS certificate SAN.")
 	opts := zap.Options{
 		Development: true,

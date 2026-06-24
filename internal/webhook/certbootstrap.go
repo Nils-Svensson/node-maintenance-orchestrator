@@ -2,9 +2,9 @@ package webhook
 
 import (
 	"context"
-	cryptorand "crypto/rand"
 	"crypto/ecdsa"
 	"crypto/elliptic"
+	cryptorand "crypto/rand"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
@@ -36,6 +36,7 @@ const (
 	caKeyField      = "ca.key"
 	pemCertificate  = "CERTIFICATE"
 	pemECPrivateKey = "EC PRIVATE KEY"
+	localhostDNS    = "localhost"
 )
 
 // CertBootstrapper manages self-signed TLS credentials for the webhook and
@@ -117,7 +118,7 @@ func (b *CertBootstrapper) EnsureCerts(ctx context.Context) error {
 	if b.MetricsCertDir != "" && (caRotated || serverCertNeedsRenewal(b.MetricsCertDir)) {
 		logger.V(1).Info("generating metrics server certificate", "service", b.MetricsServiceName, "namespace", b.Namespace)
 		metricsCert, metricsKey, err := generateServerCert(caCert, caKey, b.MetricsServiceName, b.Namespace,
-			[]string{"localhost"}, []net.IP{net.IPv4(127, 0, 0, 1)})
+			[]string{localhostDNS}, []net.IP{net.IPv4(127, 0, 0, 1)})
 		if err != nil {
 			return fmt.Errorf("generating metrics server cert: %w", err)
 		}
@@ -286,12 +287,13 @@ func generateServerCert(caCertPEM, caKeyPEM []byte, serviceName, namespace strin
 		return nil, nil, fmt.Errorf("generating serial number: %w", err)
 	}
 
-	dnsNames := []string{
+	dnsNames := make([]string, 0, 4+len(extraDNS))
+	dnsNames = append(dnsNames,
 		serviceName,
 		fmt.Sprintf("%s.%s", serviceName, namespace),
 		fmt.Sprintf("%s.%s.svc", serviceName, namespace),
 		fmt.Sprintf("%s.%s.svc.cluster.local", serviceName, namespace),
-	}
+	)
 	dnsNames = append(dnsNames, extraDNS...)
 
 	tmpl := &x509.Certificate{
@@ -343,13 +345,13 @@ func atomicWriteFile(path string, data []byte, perm os.FileMode) error {
 		return fmt.Errorf("creating temp file: %w", err)
 	}
 	tmpPath := tmp.Name()
-	defer os.Remove(tmpPath) // no-op after successful rename
+	defer func() { _ = os.Remove(tmpPath) }() // no-op after successful rename
 	if err := tmp.Chmod(perm); err != nil {
-		tmp.Close()
+		_ = tmp.Close()
 		return fmt.Errorf("setting permissions: %w", err)
 	}
 	if _, err := tmp.Write(data); err != nil {
-		tmp.Close()
+		_ = tmp.Close()
 		return fmt.Errorf("writing data: %w", err)
 	}
 	if err := tmp.Close(); err != nil {

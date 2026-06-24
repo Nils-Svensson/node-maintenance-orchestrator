@@ -1,9 +1,9 @@
 package webhook
 
 import (
-	cryptorand "crypto/rand"
 	"crypto/ecdsa"
 	"crypto/elliptic"
+	cryptorand "crypto/rand"
 	"crypto/x509"
 	"encoding/pem"
 	"math/big"
@@ -161,7 +161,7 @@ func TestGenerateServerCertMetricsSANs(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	extraDNS := []string{"localhost"}
+	extraDNS := []string{localhostDNS}
 	extraIPs := []net.IP{net.IPv4(127, 0, 0, 1)}
 	serverCert, _, err := generateServerCert(caCert, caKey, "metrics-svc", "nmo-system", extraDNS, extraIPs)
 	if err != nil {
@@ -178,7 +178,7 @@ func TestGenerateServerCertMetricsSANs(t *testing.T) {
 	for _, n := range cert.DNSNames {
 		dnsSet[n] = true
 	}
-	if !dnsSet["localhost"] {
+	if !dnsSet[localhostDNS] {
 		t.Errorf("want localhost in DNSNames; got %v", cert.DNSNames)
 	}
 
@@ -199,7 +199,7 @@ func TestGenerateServerCertMetricsSANs(t *testing.T) {
 	pool.AddCert(caParsed)
 	if _, err := cert.Verify(x509.VerifyOptions{
 		Roots:       pool,
-		DNSName:     "localhost",
+		DNSName:     localhostDNS,
 		CurrentTime: time.Now(),
 	}); err != nil {
 		t.Errorf("cert does not verify for localhost: %v", err)
