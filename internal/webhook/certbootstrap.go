@@ -362,9 +362,24 @@ func (b *CertBootstrapper) patchCABundle(ctx context.Context, caBundle []byte) e
 	logger := log.FromContext(ctx).WithName("cert-bootstrapper")
 	logger.Info("patching caBundle", "webhookConfig", b.WebhookConfigName)
 
+	// The VWC may not exist yet if pods start before kubectl apply reaches the
+	// webhook resources (../manager precedes ../webhook in kustomization.yaml).
+	// Retry until it appears or the context deadline is exceeded.
 	webhookConfig := &admissionregistrationv1.ValidatingWebhookConfiguration{}
-	if err := b.Client.Get(ctx, types.NamespacedName{Name: b.WebhookConfigName}, webhookConfig); err != nil {
-		return fmt.Errorf("getting webhook config %q: %w", b.WebhookConfigName, err)
+	for {
+		err := b.Client.Get(ctx, types.NamespacedName{Name: b.WebhookConfigName}, webhookConfig)
+		if err == nil {
+			break
+		}
+		if !apierrors.IsNotFound(err) {
+			return fmt.Errorf("getting webhook config %q: %w", b.WebhookConfigName, err)
+		}
+		logger.V(1).Info("ValidatingWebhookConfiguration not found yet, retrying", "webhookConfig", b.WebhookConfigName)
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("timed out waiting for webhook config %q: %w", b.WebhookConfigName, ctx.Err())
+		case <-time.After(2 * time.Second):
+		}
 	}
 	logger.V(1).Info("found ValidatingWebhookConfiguration", "webhooks", len(webhookConfig.Webhooks))
 

@@ -159,7 +159,7 @@ func main() {
 			"secretName", tlsCertSecretName,
 			"webhook", webhookEnabled,
 			"secureMetrics", secureMetrics)
-		bootstrapCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		bootstrapCtx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 		defer cancel()
 		if err := b.EnsureCerts(bootstrapCtx); err != nil {
 			// Non-fatal: bootstrap fails when running outside the cluster (e.g. make run).
