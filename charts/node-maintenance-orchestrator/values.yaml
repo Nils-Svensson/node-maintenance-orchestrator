@@ -35,6 +35,10 @@ metrics:
   serviceMonitor:
     enabled: false
     interval: 15s
+    # Set to true if your Prometheus pod cannot read Secrets in the operator namespace
+    # (e.g. Prometheus lacks RBAC to get the CA secret). The bearer-token authn/authz
+    # on the endpoint still protects against unauthorized access.
+    insecureSkipVerify: false
     # additionalLabels: {}  # extra labels to add to the ServiceMonitor (e.g. for Prometheus selector)
 
 resources:
@@ -46,5 +50,19 @@ resources:
     memory: 64Mi
 
 nodeSelector: {}
-tolerations: []
-affinity: {}
+
+# Pin operator pods to control-plane nodes. The operator mounts an emptyDir for
+# TLS certs; if pods run on worker nodes they will block their own drain.
+# Override if your distribution uses a different control-plane label.
+tolerations:
+  - key: node-role.kubernetes.io/control-plane
+    operator: Exists
+    effect: NoSchedule
+
+affinity:
+  nodeAffinity:
+    requiredDuringSchedulingIgnoredDuringExecution:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: node-role.kubernetes.io/control-plane
+              operator: Exists

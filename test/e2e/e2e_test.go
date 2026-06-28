@@ -314,6 +314,59 @@ var _ = Describe("Manager", Ordered, func() {
 			Eventually(verifyMetricsAvailable, 2*time.Minute).Should(Succeed())
 		})
 
+		It("should reject requests to the metrics endpoint without authorization", func() {
+			By("creating a curl pod with no bearer token")
+			cmd := exec.Command("kubectl", "run", "curl-metrics-unauth", "--restart=Never",
+				"--namespace", namespace,
+				"--image=curlimages/curl:latest",
+				"--overrides",
+				fmt.Sprintf(`{
+					"spec": {
+						"containers": [{
+							"name": "curl",
+							"image": "curlimages/curl:latest",
+							"command": ["/bin/sh", "-c"],
+							"args": ["curl -s -o /dev/null -w '%%{http_code}' -k https://%s.%s.svc.cluster.local:8443/metrics"],
+							"securityContext": {
+								"readOnlyRootFilesystem": true,
+								"allowPrivilegeEscalation": false,
+								"capabilities": {"drop": ["ALL"]},
+								"runAsNonRoot": true,
+								"runAsUser": 1000,
+								"seccompProfile": {"type": "RuntimeDefault"}
+							}
+						}],
+						"serviceAccountName": "%s",
+						"nodeSelector": {"node-role.kubernetes.io/control-plane": ""},
+						"tolerations": [{"key": "node-role.kubernetes.io/control-plane", "operator": "Exists", "effect": "NoSchedule"}]
+					}
+				}`, metricsServiceName, namespace, serviceAccountName))
+			_, err := utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred(), "Failed to create curl-metrics-unauth pod")
+
+			DeferCleanup(func() {
+				cmd := exec.Command("kubectl", "delete", "pod", "curl-metrics-unauth",
+					"-n", namespace, "--ignore-not-found=true")
+				_, _ = utils.Run(cmd)
+			})
+
+			By("waiting for the pod to complete")
+			Eventually(func(g Gomega) {
+				cmd := exec.Command("kubectl", "get", "pod", "curl-metrics-unauth",
+					"-o", "jsonpath={.status.phase}", "-n", namespace)
+				output, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(output).To(Equal("Succeeded"))
+			}, 3*time.Minute, 5*time.Second).Should(Succeed())
+
+			By("verifying the response was 401 Unauthorized")
+			cmd = exec.Command("kubectl", "logs", "curl-metrics-unauth", "-n", namespace)
+			output, err := utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(strings.TrimSpace(output)).To(Equal("401"),
+				"expected 401 from unauthenticated request, got: %s", output)
+		})
+
 		// +kubebuilder:scaffold:e2e-webhooks-checks
 	})
 
@@ -950,6 +1003,111 @@ spec:
 				output, err := utils.Run(cmd)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(output).To(Equal(nmpName))
+			}
+		})
+
+		It("should adopt and cordon nodes matching a nodeSelector", func() {
+			Expect(len(workerNodes)).To(BeNumerically(">=", 2),
+				"this test requires at least 2 worker nodes")
+			node1 := workerNodes[0]
+			node2 := workerNodes[1]
+			nmpName := "e2e-nodeselector-cordon"
+			testLabel := "maintenance.nmoo.io/e2e-nodeselector-test"
+
+			DeferCleanup(func() {
+				// Remove test labels first so no downstream test accidentally matches them,
+				// then delete the plan (triggers uncordon via reconciler), then uncordon
+				// directly as a safety net in case the reconciler doesn't finish in time.
+				for _, n := range []string{node1, node2} {
+					cmd := exec.Command("kubectl", "label", "node", n, testLabel+"-")
+					_, _ = utils.Run(cmd)
+				}
+				cmd := exec.Command("kubectl", "delete", "nmp", nmpName, "--ignore-not-found=true")
+				_, _ = utils.Run(cmd)
+				for _, n := range []string{node1, node2} {
+					cmd := exec.Command("kubectl", "uncordon", n)
+					_, _ = utils.Run(cmd)
+				}
+			})
+
+			By("labeling two nodes to match the plan's nodeSelector")
+			for _, n := range []string{node1, node2} {
+				cmd := exec.Command("kubectl", "label", "node", n, testLabel+"=true")
+				_, err := utils.Run(cmd)
+				Expect(err).NotTo(HaveOccurred())
+			}
+
+			By("creating NMP with nodeSelector and cordon enabled")
+			nmpYAML := fmt.Sprintf(`
+apiVersion: maintenance.nmoo.io/v1alpha1
+kind: NodeMaintenancePlan
+metadata:
+  name: %s
+spec:
+  nodeSelector:
+    matchLabels:
+      %s: "true"
+  reason: "e2e nodeSelector cordon test"
+  cordon:
+    enabled: true
+`, nmpName, testLabel)
+			cmd := exec.Command("kubectl", "apply", "-f", "-")
+			cmd.Stdin = strings.NewReader(nmpYAML)
+			_, err := utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred())
+
+			By("waiting for the snapshot to be taken and both nodes adopted")
+			Eventually(func(g Gomega) {
+				cmd := exec.Command("kubectl", "get", "nmp", nmpName,
+					"-o", "jsonpath={.status.nodeSnapshotTaken}")
+				output, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(output).To(Equal("true"))
+			}).Should(Succeed())
+
+			By("verifying both nodes are adopted (managed-by annotation set)")
+			for _, n := range []string{node1, node2} {
+				Eventually(func(g Gomega) {
+					cmd := exec.Command("kubectl", "get", "node", n,
+						"-o", `jsonpath={.metadata.annotations.maintenance\.nmoo\.io/managed-by}`)
+					output, err := utils.Run(cmd)
+					g.Expect(err).NotTo(HaveOccurred())
+					g.Expect(output).To(Equal(nmpName))
+				}).Should(Succeed())
+			}
+
+			By("verifying both nodes are cordoned")
+			for _, n := range []string{node1, node2} {
+				Eventually(func(g Gomega) {
+					cmd := exec.Command("kubectl", "get", "node", n,
+						"-o", "jsonpath={.spec.unschedulable}")
+					output, err := utils.Run(cmd)
+					g.Expect(err).NotTo(HaveOccurred())
+					g.Expect(output).To(Equal("true"))
+				}).Should(Succeed())
+			}
+
+			By("deleting the plan and verifying nodes are uncordoned and annotation removed")
+			cmd = exec.Command("kubectl", "delete", "nmp", nmpName)
+			_, err = utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred())
+
+			for _, n := range []string{node1, node2} {
+				Eventually(func(g Gomega) {
+					cmd := exec.Command("kubectl", "get", "node", n,
+						"-o", "jsonpath={.spec.unschedulable}")
+					output, err := utils.Run(cmd)
+					g.Expect(err).NotTo(HaveOccurred())
+					g.Expect(output).To(Or(Equal("false"), BeEmpty()))
+				}).Should(Succeed())
+
+				Eventually(func(g Gomega) {
+					cmd := exec.Command("kubectl", "get", "node", n,
+						"-o", `jsonpath={.metadata.annotations.maintenance\.nmoo\.io/managed-by}`)
+					output, err := utils.Run(cmd)
+					g.Expect(err).NotTo(HaveOccurred())
+					g.Expect(output).To(BeEmpty())
+				}).Should(Succeed())
 			}
 		})
 

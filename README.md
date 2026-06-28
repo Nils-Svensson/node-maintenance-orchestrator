@@ -87,6 +87,28 @@ The operator reports:
 
 ---
 
+## Metrics
+
+The operator exposes a Prometheus-compatible metrics endpoint on port 8443 (HTTPS). A Grafana dashboard is provided at [`grafana/nmo-dashboard.json`](grafana/nmo-dashboard.json).
+
+![Grafana dashboard showing a two-node drain in progress](grafana/example.png)
+
+The dashboard shows plan phase, overall drain progress, per-node progress over time, blocked nodes, evicted pod counts, and drift detection.
+
+To scrape metrics with the Prometheus Operator, enable the ServiceMonitor:
+
+```yaml
+metrics:
+  serviceMonitor:
+    enabled: true
+    additionalLabels:
+      release: prometheus  # match your Prometheus instance selector
+```
+
+For kubectl-based installs the ServiceMonitor is included in the default manifests. If the Prometheus Operator is not installed, the ServiceMonitor can be safely ignored — it has no effect without a running Prometheus Operator.
+
+---
+
 ## Requirements
 
 - Kubernetes 1.27+ (tested against 1.35.1; likely works on 1.27 and later)

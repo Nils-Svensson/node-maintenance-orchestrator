@@ -5,4 +5,4 @@ kind: Kustomization
 images:
 - name: controller
   newName: docker.io/fusioncat/nmo
-  newTag: dev-2
+  newTag: dev-3

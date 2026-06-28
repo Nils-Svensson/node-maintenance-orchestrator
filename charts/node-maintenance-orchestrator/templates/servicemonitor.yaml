@@ -18,6 +18,15 @@ spec:
       scheme: https
       bearerTokenFile: /var/run/secrets/kubernetes.io/serviceaccount/token
       tlsConfig:
+        {{- if .Values.metrics.serviceMonitor.insecureSkipVerify }}
         insecureSkipVerify: true
+        {{- else }}
+        insecureSkipVerify: false
+        serverName: {{ include "nmo.metricsServiceName" . }}.{{ .Release.Namespace }}.svc
+        ca:
+          secret:
+            name: {{ include "nmo.tlsCertSecretName" . }}
+            key: ca.crt
+        {{- end }}
       interval: {{ .Values.metrics.serviceMonitor.interval }}
 {{- end }}

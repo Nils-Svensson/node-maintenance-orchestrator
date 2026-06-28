@@ -8,15 +8,28 @@
     }
   ],
   "__requires": [
-    { "type": "datasource", "id": "prometheus", "name": "Prometheus", "version": "1.0.0" },
-    { "type": "grafana", "id": "grafana", "name": "Grafana", "version": "10.0.0" }
+    {
+      "type": "datasource",
+      "id": "prometheus",
+      "name": "Prometheus",
+      "version": "1.0.0"
+    },
+    {
+      "type": "grafana",
+      "id": "grafana",
+      "name": "Grafana",
+      "version": "10.0.0"
+    }
   ],
   "title": "Node Maintenance Orchestrator",
   "uid": "nmo-overview",
   "schemaVersion": 39,
   "version": 1,
   "refresh": "30s",
-  "time": { "from": "now-1h", "to": "now" },
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
   "templating": {
     "list": [
       {
@@ -31,7 +44,10 @@
         "name": "plan",
         "label": "Plan",
         "type": "query",
-        "datasource": { "type": "prometheus", "uid": "${datasource}" },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${datasource}"
+        },
         "definition": "label_values(nmo_plan_managed_nodes_total, plan)",
         "query": {
           "query": "label_values(nmo_plan_managed_nodes_total, plan)",
@@ -51,16 +67,30 @@
       "id": 1,
       "title": "Managed Nodes",
       "type": "stat",
-      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 },
-      "datasource": { "type": "prometheus", "uid": "${datasource}" },
-      "targets": [{
-        "expr": "sum by (plan) (nmo_plan_managed_nodes_total{plan=~\"$plan\"})",
-        "legendFormat": "{{plan}}",
-        "refId": "A",
-        "instant": true
-      }],
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 0,
+        "y": 0
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "expr": "sum by (plan) (nmo_plan_managed_nodes_total{plan=~\"$plan\"})",
+          "legendFormat": "{{plan}}",
+          "refId": "A",
+          "instant": true
+        }
+      ],
       "options": {
-        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
         "colorMode": "value",
         "graphMode": "none",
         "textMode": "auto",
@@ -68,8 +98,19 @@
       },
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "fixed", "fixedColor": "blue" },
-          "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] }
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
         }
       }
     },
@@ -77,16 +118,30 @@
       "id": 2,
       "title": "Ready for Maintenance",
       "type": "stat",
-      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 0 },
-      "datasource": { "type": "prometheus", "uid": "${datasource}" },
-      "targets": [{
-        "expr": "sum by (plan) (nmo_plan_ready_nodes_total{plan=~\"$plan\"})",
-        "legendFormat": "{{plan}}",
-        "refId": "A",
-        "instant": true
-      }],
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 6,
+        "y": 0
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "expr": "sum by (plan) (nmo_plan_ready_nodes_total{plan=~\"$plan\"})",
+          "legendFormat": "{{plan}}",
+          "refId": "A",
+          "instant": true
+        }
+      ],
       "options": {
-        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
         "colorMode": "background",
         "graphMode": "none",
         "textMode": "auto",
@@ -97,8 +152,14 @@
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "text", "value": null },
-              { "color": "green", "value": 1 }
+              {
+                "color": "text",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
             ]
           }
         }
@@ -108,16 +169,30 @@
       "id": 3,
       "title": "Draining",
       "type": "stat",
-      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 0 },
-      "datasource": { "type": "prometheus", "uid": "${datasource}" },
-      "targets": [{
-        "expr": "sum by (plan) (nmo_plan_draining_nodes_total{plan=~\"$plan\"})",
-        "legendFormat": "{{plan}}",
-        "refId": "A",
-        "instant": true
-      }],
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 12,
+        "y": 0
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "expr": "sum by (plan) (nmo_plan_draining_nodes_total{plan=~\"$plan\"})",
+          "legendFormat": "{{plan}}",
+          "refId": "A",
+          "instant": true
+        }
+      ],
       "options": {
-        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
         "colorMode": "background",
         "graphMode": "none",
         "textMode": "auto",
@@ -128,8 +203,14 @@
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "text", "value": null },
-              { "color": "yellow", "value": 1 }
+              {
+                "color": "text",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 1
+              }
             ]
           }
         }
@@ -139,16 +220,30 @@
       "id": 4,
       "title": "Blocked",
       "type": "stat",
-      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 0 },
-      "datasource": { "type": "prometheus", "uid": "${datasource}" },
-      "targets": [{
-        "expr": "sum by (plan) (nmo_plan_blocked_nodes_total{plan=~\"$plan\"})",
-        "legendFormat": "{{plan}}",
-        "refId": "A",
-        "instant": true
-      }],
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 18,
+        "y": 0
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "expr": "sum by (plan) (nmo_plan_blocked_nodes_total{plan=~\"$plan\"})",
+          "legendFormat": "{{plan}}",
+          "refId": "A",
+          "instant": true
+        }
+      ],
       "options": {
-        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
         "colorMode": "background",
         "graphMode": "none",
         "textMode": "auto",
@@ -159,8 +254,14 @@
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "text", "value": null },
-              { "color": "red", "value": 1 }
+              {
+                "color": "text",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
             ]
           }
         }
@@ -170,16 +271,30 @@
       "id": 5,
       "title": "Current Phase",
       "type": "stat",
-      "gridPos": { "h": 4, "w": 8, "x": 0, "y": 4 },
-      "datasource": { "type": "prometheus", "uid": "${datasource}" },
-      "targets": [{
-        "expr": "sum by (plan, phase) (nmo_plan_phase{plan=~\"$plan\"} == 1)",
-        "legendFormat": "{{plan}}: {{phase}}",
-        "refId": "A",
-        "instant": true
-      }],
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 0,
+        "y": 4
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "expr": "sum by (plan, phase) (nmo_plan_phase{plan=~\"$plan\"} == 1)",
+          "legendFormat": "{{plan}}: {{phase}}",
+          "refId": "A",
+          "instant": true
+        }
+      ],
       "options": {
-        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
         "colorMode": "none",
         "graphMode": "none",
         "textMode": "name",
@@ -187,8 +302,19 @@
       },
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "fixed", "fixedColor": "text" },
-          "thresholds": { "mode": "absolute", "steps": [{ "color": "text", "value": null }] }
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "text"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          }
         }
       }
     },
@@ -196,16 +322,30 @@
       "id": 6,
       "title": "Overall Drain Progress",
       "type": "gauge",
-      "gridPos": { "h": 4, "w": 8, "x": 8, "y": 4 },
-      "datasource": { "type": "prometheus", "uid": "${datasource}" },
-      "targets": [{
-        "expr": "sum by (plan) (nmo_plan_drain_progress{plan=~\"$plan\"})",
-        "legendFormat": "{{plan}}",
-        "refId": "A",
-        "instant": true
-      }],
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 8,
+        "y": 4
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "expr": "sum by (plan) (nmo_plan_drain_progress{plan=~\"$plan\"})",
+          "legendFormat": "{{plan}}",
+          "refId": "A",
+          "instant": true
+        }
+      ],
       "options": {
-        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
         "orientation": "auto",
         "showThresholdLabels": false,
         "showThresholdMarkers": true
@@ -218,8 +358,14 @@
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "blue", "value": null },
-              { "color": "green", "value": 1 }
+              {
+                "color": "blue",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
             ]
           }
         }
@@ -229,16 +375,30 @@
       "id": 7,
       "title": "Drifted Nodes",
       "type": "stat",
-      "gridPos": { "h": 4, "w": 8, "x": 16, "y": 4 },
-      "datasource": { "type": "prometheus", "uid": "${datasource}" },
-      "targets": [{
-        "expr": "sum by (plan) (nmo_plan_drifted_nodes_total{plan=~\"$plan\"})",
-        "legendFormat": "{{plan}}",
-        "refId": "A",
-        "instant": true
-      }],
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 16,
+        "y": 4
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "expr": "sum by (plan) (nmo_plan_drifted_nodes_total{plan=~\"$plan\"})",
+          "legendFormat": "{{plan}}",
+          "refId": "A",
+          "instant": true
+        }
+      ],
       "options": {
-        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
         "colorMode": "background",
         "graphMode": "none",
         "textMode": "auto",
@@ -249,8 +409,14 @@
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "text", "value": null },
-              { "color": "orange", "value": 1 }
+              {
+                "color": "text",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              }
             ]
           }
         }
@@ -260,16 +426,31 @@
       "id": 8,
       "title": "Node Drain Progress",
       "type": "timeseries",
-      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 8 },
-      "datasource": { "type": "prometheus", "uid": "${datasource}" },
-      "targets": [{
-        "expr": "sum by (plan, node) (nmo_node_drain_progress{plan=~\"$plan\"})",
-        "legendFormat": "{{plan}} / {{node}}",
-        "refId": "A"
-      }],
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "expr": "sum by (plan, node) (nmo_node_drain_progress{plan=~\"$plan\"})",
+          "legendFormat": "{{plan}} / {{node}}",
+          "refId": "A"
+        }
+      ],
       "options": {
-        "legend": { "displayMode": "list", "placement": "bottom" },
-        "tooltip": { "mode": "multi" }
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
       },
       "fieldConfig": {
         "defaults": {
@@ -287,68 +468,153 @@
       "id": 11,
       "title": "Per-Node Details",
       "type": "table",
-      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 16 },
-      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 16
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
       "targets": [
         {
-          "expr": "sum by (plan, node) (nmo_node_drain_progress{plan=~\"$plan\"})",
+          "expr": "max by (plan, node) (nmo_node_drain_progress{plan=~\"$plan\"})",
           "legendFormat": "",
           "refId": "A",
-          "instant": true
+          "instant": true,
+          "format": "table"
         },
         {
-          "expr": "sum by (plan, node) (nmo_node_evicted_pods_total{plan=~\"$plan\"})",
+          "expr": "max by (plan, node) (nmo_node_evicted_pods_total{plan=~\"$plan\"})",
           "legendFormat": "",
           "refId": "B",
-          "instant": true
+          "instant": true,
+          "format": "table"
         },
         {
-          "expr": "sum by (plan, node) (nmo_node_blocked_pods{plan=~\"$plan\"})",
+          "expr": "max by (plan, node) (nmo_node_blocked_pods{plan=~\"$plan\"})",
           "legendFormat": "",
           "refId": "C",
-          "instant": true
+          "instant": true,
+          "format": "table"
         }
       ],
       "options": {
-        "footer": { "show": false },
-        "sortBy": [{ "displayName": "Plan", "desc": false }]
+        "footer": {
+          "show": false
+        },
+        "sortBy": [
+          {
+            "displayName": "Plan",
+            "desc": false
+          }
+        ]
       },
       "fieldConfig": {
-        "defaults": { "custom": { "align": "left" } },
+        "defaults": {
+          "custom": {
+            "align": "left"
+          }
+        },
         "overrides": [
           {
-            "matcher": { "id": "byName", "options": "Value #A" },
+            "matcher": {
+              "id": "byName",
+              "options": "Value #A"
+            },
             "properties": [
-              { "id": "displayName", "value": "Drain Progress" },
-              { "id": "unit", "value": "percentunit" },
-              { "id": "custom.width", "value": 150 }
+              {
+                "id": "displayName",
+                "value": "Drain Progress"
+              },
+              {
+                "id": "unit",
+                "value": "percentunit"
+              },
+              {
+                "id": "custom.width",
+                "value": 150
+              }
             ]
           },
           {
-            "matcher": { "id": "byName", "options": "Value #B" },
+            "matcher": {
+              "id": "byName",
+              "options": "Value #B"
+            },
             "properties": [
-              { "id": "displayName", "value": "Evicted Pods" },
-              { "id": "custom.width", "value": 130 }
+              {
+                "id": "displayName",
+                "value": "Evicted Pods"
+              },
+              {
+                "id": "custom.width",
+                "value": 130
+              }
             ]
           },
           {
-            "matcher": { "id": "byName", "options": "Value #C" },
+            "matcher": {
+              "id": "byName",
+              "options": "Value #C"
+            },
             "properties": [
-              { "id": "displayName", "value": "Blocked Pods" },
-              { "id": "custom.width", "value": 130 },
-              { "id": "thresholds", "value": { "mode": "absolute", "steps": [{ "color": "text", "value": null }, { "color": "red", "value": 1 }] } },
-              { "id": "custom.displayMode", "value": "color-background" }
+              {
+                "id": "displayName",
+                "value": "Blocked Pods"
+              },
+              {
+                "id": "custom.width",
+                "value": 130
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "text",
+                      "value": null
+                    },
+                    {
+                      "color": "red",
+                      "value": 1
+                    }
+                  ]
+                }
+              },
+              {
+                "id": "custom.displayMode",
+                "value": "color-background"
+              }
             ]
           }
         ]
       },
       "transformations": [
-        { "id": "merge", "options": {} },
+        {
+          "id": "merge",
+          "options": {}
+        },
         {
           "id": "organize",
           "options": {
-            "excludeByName": { "Time": true, "__name__": true, "job": true, "instance": true, "endpoint": true, "service": true, "namespace": true, "pod": true },
-            "renameByName": { "plan": "Plan", "node": "Node" }
+            "excludeByName": {
+              "Time": true,
+              "__name__": true,
+              "job": true,
+              "instance": true,
+              "endpoint": true,
+              "service": true,
+              "namespace": true,
+              "pod": true
+            },
+            "renameByName": {
+              "plan": "Plan",
+              "node": "Node"
+            }
           }
         }
       ]
