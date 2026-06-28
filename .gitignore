@@ -30,7 +30,7 @@ go.work
 *.kubeconfig
 
 # Local postmortems — not for public repo
-docs/postmortem-*.md
-
+docs/postmortem-*.md 
+RELEASE_*.md
 # Mac
 .DS_Store

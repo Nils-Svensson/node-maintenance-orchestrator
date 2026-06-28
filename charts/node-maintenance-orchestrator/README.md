@@ -87,6 +87,28 @@ The operator reports:
 
 ---
 
+## Metrics
+
+The operator exposes a Prometheus-compatible metrics endpoint on port 8443 (HTTPS). A Grafana dashboard is provided at [`grafana/nmo-dashboard.json`](grafana/nmo-dashboard.json).
+
+![Grafana dashboard showing a two-node drain in progress](../../grafana/example.png)
+
+The dashboard shows plan phase, overall drain progress, per-node progress over time, blocked nodes, evicted pod counts, and drift detection.
+
+To scrape metrics with the Prometheus Operator, enable the ServiceMonitor:
+
+```yaml
+metrics:
+  serviceMonitor:
+    enabled: true
+    additionalLabels:
+      release: prometheus  # match your Prometheus instance selector
+```
+
+For kubectl-based installs the ServiceMonitor is included in the default manifests. If the Prometheus Operator is not installed, the ServiceMonitor can be safely ignored — it has no effect without a running Prometheus Operator.
+
+---
+
 ## Requirements
 
 - Kubernetes 1.27+ (tested against 1.35.1; likely works on 1.27 and later)
@@ -151,8 +173,6 @@ APIs and behavior may change before v1beta1.
 ## What's next
 
 - **nodeSelector drift recovery** — re-adopt a drifted node without requiring the plan to be deleted and recreated
-- **Node disappearance handling** — explicit failure handling when a managed node disappears mid-drain
-- **Validating webhook** — to reject creation of plans with nodes that don't exist in the cluster, as well as nodes already owned by another plan
 - **Richer preview** — depending on feasibility and complexity
 - **Enforcement policy** — an `enforcementPolicy` option letting users choose between the current cooperative mode and an authoritative mode that actively re-enforces the desired cordon state against external changes
 

@@ -173,7 +173,6 @@ APIs and behavior may change before v1beta1.
 ## What's next
 
 - **nodeSelector drift recovery** — re-adopt a drifted node without requiring the plan to be deleted and recreated
-- **Validating webhook** — to reject creation of plans with nodes that don't exist in the cluster, as well as nodes already owned by another plan
 - **Richer preview** — depending on feasibility and complexity
 - **Enforcement policy** — an `enforcementPolicy` option letting users choose between the current cooperative mode and an authoritative mode that actively re-enforces the desired cordon state against external changes
 
