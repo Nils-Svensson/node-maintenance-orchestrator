@@ -26,12 +26,10 @@ const (
 	// a DriftDetected warning, and ownership is released cleanly.
 	DriftReasonMaintenanceComplete = "MaintenanceComplete"
 
-	// TODO: DriftReasonExternalDrain — detect when a managed node's pods were evicted
-	// by an external actor rather than the operator. Currently not implemented because
-	// it is not detectable from pod state alone (we cannot distinguish "operator evicted"
-	// from "external eviction"), and the operator already handles this transparently:
-	// filterPodsForDrain finds no pods, applyDrainResults marks the node complete.
-	// A future approach could track per-pod eviction ownership via annotations.
+	// ExternalDrain detection is intentionally not implemented: pod state alone cannot
+	// distinguish operator-evicted from externally-evicted pods. The operator handles
+	// this transparently — filterPodsForDrain finds no remaining pods and marks the node
+	// complete. A future approach could track eviction ownership via pod annotations.
 )
 
 // DetectNodeDrift returns true when a stable node (owned, in desired set) has

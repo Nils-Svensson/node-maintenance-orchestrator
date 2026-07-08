@@ -1,5 +1,12 @@
 # Node Maintenance Orchestrator
 
+[![Tests](https://github.com/Nils-Svensson/node-maintenance-orchestrator/actions/workflows/test.yml/badge.svg)](https://github.com/Nils-Svensson/node-maintenance-orchestrator/actions/workflows/test.yml)
+[![E2E Tests](https://github.com/Nils-Svensson/node-maintenance-orchestrator/actions/workflows/test-e2e.yml/badge.svg)](https://github.com/Nils-Svensson/node-maintenance-orchestrator/actions/workflows/test-e2e.yml)
+[![Release](https://img.shields.io/github/v/release/Nils-Svensson/node-maintenance-orchestrator)](https://github.com/Nils-Svensson/node-maintenance-orchestrator/releases/latest)
+[![Go Version](https://img.shields.io/github/go-mod/go-version/Nils-Svensson/node-maintenance-orchestrator)](go.mod)
+[![License](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
+[![Artifact Hub](https://img.shields.io/endpoint?url=https://artifacthub.io/badge/repository/node-maintenance-orchestrator)](https://artifacthub.io/packages/helm/node-maintenance-orchestrator/node-maintenance-orchestrator)
+
 A Kubernetes operator for orchestrating node maintenance.
 
 ## Overview

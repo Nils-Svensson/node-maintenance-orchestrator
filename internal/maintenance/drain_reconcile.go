@@ -1,8 +1,3 @@
-// TODO(failure-modes): DrainTimedOut is currently the only terminal failure state.
-// Future work should consider handling node disappearance mid-drain: ownership
-// resolution already drops the node from res.Stable, but there is no explicit
-// failure event.
-
 package maintenance
 
 import (

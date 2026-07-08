@@ -12,8 +12,6 @@ import (
 func (s *MaintenanceService) CleanUp(ctx context.Context, plan *v1alpha1.NodeMaintenancePlan) error {
 	s.log.Info("cleaning up plan")
 
-	// TODO: cancel any in-flight drain operations when drain is implemented.
-
 	owned, err := s.ResolveOwnedNodes(ctx, plan.Name)
 	if err != nil {
 		return fmt.Errorf("resolving owned nodes: %w", err)
