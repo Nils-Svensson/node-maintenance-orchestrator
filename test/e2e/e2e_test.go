@@ -1294,11 +1294,15 @@ spec:
 			Eventually(nmpCondition(nmpName, "DrainBlocked"), 3*time.Minute, 5*time.Second).Should(Succeed())
 
 			By("verifying DrainInProgress is False while the stuck pod blocks drain")
-			cmd = exec.Command("kubectl", "get", "nmp", nmpName,
-				"-o", `jsonpath={.status.conditions[?(@.type=="DrainInProgress")].status}`)
-			output, err := utils.Run(cmd)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(output).To(Equal("False"))
+			// DrainInProgress may briefly coexist with DrainBlocked if other pods were
+			// terminating alongside the stuck pod — use Eventually to wait for it to settle.
+			Eventually(func(g Gomega) {
+				cmd = exec.Command("kubectl", "get", "nmp", nmpName,
+					"-o", `jsonpath={.status.conditions[?(@.type=="DrainInProgress")].status}`)
+				output, err = utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(output).To(Equal("False"))
+			}).Should(Succeed())
 
 			By("verifying the node status contains a StuckTerminating issue referencing the stuck pod")
 			Eventually(func(g Gomega) {

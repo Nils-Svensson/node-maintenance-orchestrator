@@ -125,21 +125,25 @@ func (s *MaintenanceService) applyDrainResults(ctx context.Context, plan *v1alph
 			updateNodeDrainStatus(plan, r.NodeName, r.Outcome, stuckIssues)
 			s.log.Info("evictions in progress", "node", r.NodeName, "evicted", r.Outcome.Evicted)
 
-		case r.Err == nil && r.Outcome.Terminating > 0:
-			// No new evictions needed; waiting for previously evicted pods to be removed.
-			allDone = false
-			evictionsInFlight = true
-			updateNodeDrainStatus(plan, r.NodeName, r.Outcome, stuckIssues)
-			s.log.V(1).Info("waiting for pods to terminate", "node", r.NodeName, "terminating", r.Outcome.Terminating)
-
 		case r.Err == nil && r.Outcome.StuckTerminating > 0:
-			// All remaining pods are stuck in Terminating past their grace period.
+			// Some pods have exceeded their grace period and are stuck. Always blocked.
+			// If other pods are still within their grace period, evictions remain in flight too.
 			allDone = false
 			anyBlocked = true
+			if r.Outcome.Terminating > 0 {
+				evictionsInFlight = true
+			}
 			updateNodeDrainStatus(plan, r.NodeName, r.Outcome, stuckIssues)
 			s.log.Info("drain stuck: pods not terminating", "node", r.NodeName, "stuckPods", r.Outcome.StuckTerminating)
 			s.recorder.Eventf(plan, nil, corev1.EventTypeWarning, "DrainBlocked", "DrainNode",
 				"node %q: %d pod(s) stuck in Terminating beyond grace period", r.NodeName, r.Outcome.StuckTerminating)
+
+		case r.Err == nil && r.Outcome.Terminating > 0:
+			// No stuck pods; waiting for previously evicted pods to be removed.
+			allDone = false
+			evictionsInFlight = true
+			updateNodeDrainStatus(plan, r.NodeName, r.Outcome, stuckIssues)
+			s.log.V(1).Info("waiting for pods to terminate", "node", r.NodeName, "terminating", r.Outcome.Terminating)
 
 		case errors.As(r.Err, &notReady):
 			allDone = false
@@ -160,6 +164,10 @@ func (s *MaintenanceService) applyDrainResults(ctx context.Context, plan *v1alph
 		case errors.As(r.Err, &blocked):
 			allDone = false
 			anyBlocked = true
+			if r.Outcome.Terminating > 0 {
+				// Pods evicted in prior passes are still terminating alongside the blocked pod.
+				evictionsInFlight = true
+			}
 			issues := append(blockedPodIssues(blocked), stuckIssues...)
 			updateNodeDrainStatus(plan, r.NodeName, r.Outcome, issues)
 			s.log.Info("drain blocked", "node", r.NodeName, "reason", blocked.Error())
