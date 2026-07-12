@@ -106,6 +106,11 @@ type DrainOptions struct {
 	// Eviction API, bypassing budget checks entirely.
 	// +kubebuilder:default=true
 	RespectPodDisruptionBudgets bool `json:"respectPodDisruptionBudgets,omitempty"`
+
+	// TODO: maybe add jobAwareEviction bool — skip eviction of pods owned by Jobs/CronJobs
+	// until the Job has completed, classifying them as Waiting rather than Evictable.
+	// Requires Job status lookup in filterPodsForDrain and a new classification bucket.
+	// Interact carefully with timeoutMinutes to avoid indefinite drain stalls.
 }
 
 // DrainSpec defines drain behavior

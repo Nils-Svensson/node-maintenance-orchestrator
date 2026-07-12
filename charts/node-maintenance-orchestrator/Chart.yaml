@@ -24,21 +24,7 @@ annotations:
     - name: node-maintenance-orchestrator
       image: ghcr.io/nils-svensson/node-maintenance-orchestrator:latest
   artifacthub.io/changes: |
-    - kind: added
-      description: "Validating webhook: rejects plans targeting non-existent nodes or nodes already owned by another plan"
-    - kind: added
-      description: "Self-signed TLS cert bootstrapper: shared CA Secret for webhook and metrics, no cert-manager required, HA-safe"
-    - kind: added
-      description: "Secure metrics: HTTPS endpoint on :8443 with Kubernetes authn/authz (TokenReview + SubjectAccessReview)"
-    - kind: added
-      description: "Grafana dashboard at grafana/nmo-dashboard.json for visualising plan and per-node drain metrics"
-    - kind: added
-      description: "Node NotReady detection: reports DrainBlocked with NodeNotReady issue and resumes drain after node recovery"
-    - kind: added
-      description: "In-maintenance node label (maintenance.nmoo.io/in-maintenance) set on adoption, removed on release"
-    - kind: added
-      description: "Stuck-terminating pod detection with DrainBlocked condition and StuckTerminating NodeIssue entries"
     - kind: fixed
-      description: "Operator pods now pinned to control-plane nodes to prevent emptyDir volume blocking worker node drain"
+      description: "Drain: StuckTerminating pods now correctly raise DrainBlocked even when other pods are simultaneously in normal Terminating state"
     - kind: changed
-      description: "Helm chart: control-plane affinity and toleration set by default; override if your distribution uses a different label"
+      description: "Go updated to 1.26.5 (security fixes in crypto/tls and os)"
