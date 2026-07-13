@@ -1117,12 +1117,13 @@ spec:
 			deployName := "e2e-drain-timeout-workload"
 
 			DeferCleanup(func() {
-				cmd := exec.Command("kubectl", "delete", "pods", "-n", "default",
+				// Delete deployment first so the controller stops recreating the pod before we force-delete it.
+				cmd := exec.Command("kubectl", "delete", "deployment", deployName, "-n", "default",
+					"--ignore-not-found=true", "--wait=false")
+				_, _ = utils.Run(cmd)
+				cmd = exec.Command("kubectl", "delete", "pods", "-n", "default",
 					"-l", fmt.Sprintf("app=%s", deployName),
 					"--grace-period=0", "--force", "--ignore-not-found=true")
-				_, _ = utils.Run(cmd)
-				cmd = exec.Command("kubectl", "delete", "deployment", deployName, "-n", "default",
-					"--ignore-not-found=true", "--wait=false")
 				_, _ = utils.Run(cmd)
 			})
 
@@ -1215,11 +1216,15 @@ spec:
 			podName := "e2e-stuck-term-pod"
 
 			DeferCleanup(func() {
+				// Remove the finalizer so the pod can actually terminate.
 				cmd := exec.Command("kubectl", "patch", "pod", podName, "-n", "default",
 					"--type=merge", "-p", `{"metadata":{"finalizers":[]}}`)
 				_, _ = utils.Run(cmd)
+				// Wait for the pod to be fully gone so it doesn't contaminate the next test
+				// that uses this node — the pod has terminationGracePeriodSeconds: 1 so
+				// deletion should be near-instant once the finalizer is removed.
 				cmd = exec.Command("kubectl", "delete", "pod", podName, "-n", "default",
-					"--ignore-not-found=true", "--wait=false")
+					"--ignore-not-found=true", "--wait=true", "--timeout=30s")
 				_, _ = utils.Run(cmd)
 			})
 

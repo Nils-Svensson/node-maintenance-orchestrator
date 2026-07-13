@@ -66,10 +66,7 @@ func (s *MaintenanceService) drainNode(ctx context.Context, plan *v1alpha1.NodeM
 		StuckPods:        result.StuckTerminating,
 	}
 
-	if len(result.Blocked) > 0 {
-		return outcome, &drainBlockedError{node: node.Name, pods: result.Blocked}
-	}
-
+	var pdbBlocked []corev1.Pod
 	for i := range result.Evictable {
 		pod := &result.Evictable[i]
 		if err := s.evictPod(ctx, pod, cfg.PodTerminationGracePeriodSeconds); err != nil {
@@ -82,7 +79,8 @@ func (s *MaintenanceService) drainNode(ctx context.Context, plan *v1alpha1.NodeM
 					outcome.Evicted++
 					continue
 				}
-				return outcome, &drainBlockedError{node: node.Name, pods: []corev1.Pod{*pod}, pdbBlocked: true}
+				pdbBlocked = append(pdbBlocked, *pod)
+				continue
 			}
 			if apierrors.IsNotFound(err) {
 				// Pod was already deleted between classification and eviction.
@@ -91,6 +89,15 @@ func (s *MaintenanceService) drainNode(ctx context.Context, plan *v1alpha1.NodeM
 			return outcome, fmt.Errorf("evicting pod %s/%s: %w", pod.Namespace, pod.Name, err)
 		}
 		outcome.Evicted++
+	}
+
+	// Config-blocked pods require user action (e.g. set force=true); report them first.
+	// PDB-blocked pods are kept separate so blockedPodIssues can label each correctly.
+	if len(result.Blocked) > 0 {
+		return outcome, &drainBlockedError{node: node.Name, pods: result.Blocked}
+	}
+	if len(pdbBlocked) > 0 {
+		return outcome, &drainBlockedError{node: node.Name, pods: pdbBlocked, pdbBlocked: true}
 	}
 	return outcome, nil
 }
