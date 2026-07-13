@@ -26,5 +26,7 @@ annotations:
   artifacthub.io/changes: |
     - kind: fixed
       description: "Drain: StuckTerminating pods now correctly raise DrainBlocked even when other pods are simultaneously in normal Terminating state"
+    - kind: fixed
+      description: "Drain: a config-blocked or PDB-blocked pod no longer halts eviction of other evictable pods on the same node; drain remains blocked until the blocking pod is resolved"
     - kind: changed
       description: "Go updated to 1.26.5 (security fixes in crypto/tls and os)"

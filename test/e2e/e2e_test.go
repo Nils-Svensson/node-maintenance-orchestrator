@@ -534,6 +534,7 @@ spec:
 			target := workerNodes[2]
 			nmpName := "e2e-pdb"
 			deployName := "e2e-pdb-workload"
+			freeDeployName := "e2e-pdb-free-workload"
 			pdbName := "e2e-pdb-block"
 
 			DeferCleanup(func() {
@@ -542,9 +543,12 @@ spec:
 				cmd = exec.Command("kubectl", "delete", "deployment", deployName, "-n", "default",
 					"--ignore-not-found=true", "--wait=false")
 				_, _ = utils.Run(cmd)
+				cmd = exec.Command("kubectl", "delete", "deployment", freeDeployName, "-n", "default",
+					"--ignore-not-found=true", "--wait=false")
+				_, _ = utils.Run(cmd)
 			})
 
-			By("deploying a workload on the target node")
+			By("deploying a PDB-protected workload on the target node")
 			deployYAML := fmt.Sprintf(`
 apiVersion: apps/v1
 kind: Deployment
@@ -573,10 +577,40 @@ spec:
 			_, err := utils.Run(cmd)
 			Expect(err).NotTo(HaveOccurred())
 
-			By("waiting for workload pod to be Running on target node")
-			Eventually(waitForPodRunning(fmt.Sprintf("app=%s", deployName), target)).Should(Succeed())
+			By("deploying a second freely-evictable workload on the same node")
+			freeDeployYAML := fmt.Sprintf(`
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: %s
+  namespace: default
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: %s
+  template:
+    metadata:
+      labels:
+        app: %s
+    spec:
+      terminationGracePeriodSeconds: 1
+      nodeSelector:
+        kubernetes.io/hostname: %s
+      containers:
+      - name: pause
+        image: registry.k8s.io/pause:3.9
+`, freeDeployName, freeDeployName, freeDeployName, target)
+			cmd = exec.Command("kubectl", "apply", "-f", "-")
+			cmd.Stdin = strings.NewReader(freeDeployYAML)
+			_, err = utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred())
 
-			By("creating a PDB that blocks all evictions")
+			By("waiting for both pods to be Running on the target node")
+			Eventually(waitForPodRunning(fmt.Sprintf("app=%s", deployName), target)).Should(Succeed())
+			Eventually(waitForPodRunning(fmt.Sprintf("app=%s", freeDeployName), target)).Should(Succeed())
+
+			By("creating a PDB that blocks all evictions of the protected workload")
 			pdbYAML := fmt.Sprintf(`
 apiVersion: policy/v1
 kind: PodDisruptionBudget
@@ -617,6 +651,26 @@ spec:
 			By("waiting for DrainBlocked condition")
 			Eventually(nmpCondition(nmpName, "DrainBlocked")).Should(Succeed())
 
+			By("verifying the free pod was evicted despite the PDB block on the other pod")
+			Eventually(func(g Gomega) {
+				cmd := exec.Command("kubectl", "get", "pods", "-n", "default",
+					"-l", fmt.Sprintf("app=%s", freeDeployName),
+					"--field-selector", fmt.Sprintf("spec.nodeName=%s", target),
+					"-o", "name")
+				output, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(strings.TrimSpace(output)).To(BeEmpty())
+			}, 2*time.Minute, 5*time.Second).Should(Succeed())
+
+			By("verifying the PDB-protected pod is still present on the node")
+			cmd = exec.Command("kubectl", "get", "pods", "-n", "default",
+				"-l", fmt.Sprintf("app=%s", deployName),
+				"--field-selector", fmt.Sprintf("spec.nodeName=%s", target),
+				"-o", "name")
+			output, err := utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(strings.TrimSpace(output)).NotTo(BeEmpty())
+
 			By("deleting the PDB to unblock drain")
 			cmd = exec.Command("kubectl", "delete", "pdb", pdbName, "-n", "default")
 			_, err = utils.Run(cmd)
@@ -630,7 +684,7 @@ spec:
 				"-l", fmt.Sprintf("app=%s", deployName),
 				"--field-selector", fmt.Sprintf("spec.nodeName=%s", target),
 				"-o", "name")
-			output, err := utils.Run(cmd)
+			output, err = utils.Run(cmd)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(strings.TrimSpace(output)).To(BeEmpty())
 		})
