@@ -114,6 +114,20 @@ metrics:
 
 For kubectl-based installs the ServiceMonitor is included in the default manifests. If the Prometheus Operator is not installed, the ServiceMonitor can be safely ignored — it has no effect without a running Prometheus Operator.
 
+### ServiceMonitor TLS
+
+The metrics endpoint defaults to HTTPS (the `--metrics-secure` flag defaults to `true`; it is not exposed as a Helm value). Both install paths configure the ServiceMonitor with `insecureSkipVerify: false` and reference the operator's CA Secret (`*-tls-cert`) for certificate verification.
+
+For this to work, the Prometheus pod must be able to read that Secret in the operator namespace, and the Prometheus instance must be configured to monitor that namespace. If Prometheus lacks Secret access, either grant the Prometheus service account `get` on the `*-tls-cert` Secret in the operator namespace, or skip TLS verification in the Helm values:
+
+```yaml
+metrics:
+  serviceMonitor:
+    insecureSkipVerify: true
+```
+
+Bearer-token authorization on the endpoint is still enforced regardless of TLS verification.
+
 ---
 
 ## Requirements
@@ -133,6 +147,8 @@ helm install nmo oci://ghcr.io/nils-svensson/charts/node-maintenance-orchestrato
   --namespace nmo-system \
   --create-namespace
 ```
+
+Operator pods are scheduled on control-plane nodes by default. If your distribution uses a different control-plane label, override `affinity` and `tolerations` in `values.yaml`. See [Deployment constraints](docs/architecture.md#deployment-constraints).
 
 ### kubectl
 

@@ -79,3 +79,13 @@ Drain slots (`maxParallel`) are tracked by counting how many nodes currently hav
 The controller is registered with the manager as a `NodeMaintenancePlan` controller. It also watches `Node` resources, mapping each node change to the set of plans that reference it in their spec. This avoids watching and re-reconciling all plans on every node change.
 
 Up to 10 plans are reconciled concurrently (`MaxConcurrentReconciles: 10`). Plans for different node sets are independent.
+
+---
+
+## Deployment constraints
+
+The operator mounts an `emptyDir` volume to hold its self-signed TLS certificates (for the webhook and metrics server). If the operator pod runs on a worker node and a `NodeMaintenancePlan` targets that same node, the emptyDir volume will prevent the node from draining — the operator would be trying to drain the node it is running on, but the pod cannot be evicted while the volume is present.
+
+To avoid this, both the Helm chart and the kustomize manifests default to scheduling operator pods on control-plane nodes (`node-role.kubernetes.io/control-plane`) with a matching toleration for the control-plane taint.
+
+If your distribution uses a different control-plane label or taint, override `affinity` and `tolerations` in `values.yaml` (Helm) or patch the `Deployment` manifest (kustomize) accordingly.
