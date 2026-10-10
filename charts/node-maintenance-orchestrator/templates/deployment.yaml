@@ -73,6 +73,11 @@ spec:
               port: 8081
             initialDelaySeconds: 5
             periodSeconds: 10
+          env:
+            - name: GOMEMLIMIT
+              valueFrom:
+                resourceFieldRef:
+                  resource: limits.memory
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
           {{- if or .Values.webhook.enabled .Values.metrics.enabled }}

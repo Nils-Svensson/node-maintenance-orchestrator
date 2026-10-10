@@ -76,6 +76,11 @@ spec:
             port: 8081
           initialDelaySeconds: 5
           periodSeconds: 10
+        env:
+        - name: GOMEMLIMIT
+          valueFrom:
+            resourceFieldRef:
+              resource: limits.memory
         resources:
           limits:
             cpu: 500m
