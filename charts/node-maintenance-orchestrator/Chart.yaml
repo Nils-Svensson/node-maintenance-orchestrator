@@ -25,4 +25,4 @@ annotations:
       image: ghcr.io/nils-svensson/node-maintenance-orchestrator:latest
   artifacthub.io/changes: |
     - kind: changed
-      description: "Go updated to 1.27 and dependencies updated to latest versions"
+      description: "Go updated to 1.27.2, dependencies bump, and GOMEMLIMIT env added"
