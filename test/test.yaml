@@ -14,4 +14,3 @@ spec:
       maxParallel: 1
       force: true
       respectPodDisruptionBudgets: false
-      
